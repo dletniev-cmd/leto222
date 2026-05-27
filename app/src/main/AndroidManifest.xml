@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        INTERNET is required so the Telegram bindings screen can long-poll
+        api.telegram.org/bot<token>/getUpdates and pick up the /start <token>
+        message the bot receives after the user taps "Запустить" on the bot
+        chat. Telegram serves all bot-API endpoints over HTTPS, so there is
+        no need to relax usesCleartextTraffic.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+        Open Telegram via deep link from the bindings screen. On Android 11+
+        package visibility rules require this to be declared explicitly, even
+        for VIEW intents — without it queryIntentActivities returns nothing
+        and the "Open in Telegram" branch in the auth service silently falls
+        through to a web fallback.
+    -->
+    <queries>
+        <package android:name="org.telegram.messenger" />
+        <package android:name="org.telegram.plus" />
+        <package android:name="org.thunderdog.challegram" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" android:host="t.me" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tg" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".WellnessApplication"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Wellness"
+        tools:targetApi="31">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Wellness">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+                Deep link target for the "Открыть приложение" inline button
+                that letifybot replies with after a successful /start <token>.
+                Telegram's inline-keyboard URL field accepts http(s) only, so
+                we register both the https:// alias and the bare letify://
+                scheme: the user's tap in Telegram becomes a VIEW intent that
+                Android routes here without round-tripping a browser. We do
+                not autoVerify the https host because we don't own the
+                domain — the URL itself is just an addressable handle, the
+                resolver picks Wellness directly when it's the only filter
+                claiming it.
+            -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="letify.app" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="letify" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
