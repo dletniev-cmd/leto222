@@ -79,11 +79,16 @@ private fun TimePicker(hour: Int, minute: Int, onChange: (Int, Int) -> Unit) {
 
 @Composable
 private fun Stepper(value: Int, min: Int, max: Int, step: Int = 1, onChange: (Int) -> Unit) {
+    // Wrap-around helper. Standard modulo with the +span tweak so negative
+    // remainders (Kotlin's `%` is sign-preserving) still land on the positive
+    // side of the range — e.g. minute 0, step 5 going DOWN wraps to 55, not 4.
+    fun wrap(next: Int): Int {
+        val span = max - min + 1
+        return ((next - min) % span + span) % span + min
+    }
+
     Row(verticalAlignment = Alignment.CenterVertically) {
-        NoFeedbackButton(onClick = {
-            val v = if (value - step < min) max - ((max - min + 1 - step) % (max - min + 1)) else value - step
-            onChange(v.coerceIn(min, max))
-        }, modifier = Modifier.size(36.dp)) {
+        NoFeedbackButton(onClick = { onChange(wrap(value - step)) }, modifier = Modifier.size(36.dp)) {
             Box(
                 Modifier.size(36.dp).background(Wellness.colors.container, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
@@ -92,10 +97,7 @@ private fun Stepper(value: Int, min: Int, max: Int, step: Int = 1, onChange: (In
         Box(Modifier.size(60.dp), contentAlignment = Alignment.Center) {
             Text("%02d".format(value), color = Wellness.colors.text, style = Wellness.typography.displayMedium)
         }
-        NoFeedbackButton(onClick = {
-            val v = if (value + step > max) min else value + step
-            onChange(v.coerceIn(min, max))
-        }, modifier = Modifier.size(36.dp)) {
+        NoFeedbackButton(onClick = { onChange(wrap(value + step)) }, modifier = Modifier.size(36.dp)) {
             Box(
                 Modifier.size(36.dp).background(Wellness.colors.container, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
