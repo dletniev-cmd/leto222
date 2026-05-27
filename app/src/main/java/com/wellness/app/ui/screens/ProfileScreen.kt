@@ -94,10 +94,13 @@ fun ProfileScreen(
             }
         }
 
-        // Name + subtitle. Telegram display name takes precedence whenever
-        // a binding exists — the user specifically asked for the TG name to
-        // surface on the profile.
-        val displayName = state.telegramUser?.displayName ?: state.userName
+        // Name + subtitle. We render `state.userName` directly — Telegram
+        // binding writes the TG display name into `userName` once on bind
+        // (see [AppState.bindTelegram]), and the profile editor mutates the
+        // same field. Reading a single source of truth keeps the header and
+        // the editor in sync regardless of whether the user edited the name
+        // manually after binding.
+        val displayName = state.userName
         Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
             Text(
                 displayName,
