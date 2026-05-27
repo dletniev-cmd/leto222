@@ -104,14 +104,13 @@ fun OverlayScreen(
             }
 
             // ── 2. Pinned header ────────────────────────────────────────
-            //   Solid bg so the scroll content slides UNDER it cleanly.
-            //   `windowInsetsPadding(statusBars)` keeps it under the
-            //   notch / status icons.
+            //   Transparent — content visibly slides UNDER the title/back
+            //   arrow (per design). `windowInsetsPadding(statusBars)`
+            //   keeps it under the notch / status icons.
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .background(Wellness.colors.bg)
                     .windowInsetsPadding(WindowInsets.statusBars)
                     .padding(horizontal = 18.dp),
             ) {
