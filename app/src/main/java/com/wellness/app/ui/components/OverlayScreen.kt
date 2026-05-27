@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -28,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.wellness.app.ui.icons.SolarIcon
 import com.wellness.app.ui.theme.Wellness
@@ -73,27 +76,52 @@ fun OverlayScreen(
                 .nestedScroll(elastic.connection),
         ) {
             // ── 1. Scrollable content ────────────────────────────────────
-            //   - statusBars padding so content starts below the cutout
-            //   - top padding == header height (54dp) so the first content
-            //     row clears the pinned header
-            //   - imePadding so the focused TextField can be scrolled into
-            //     view above the keyboard
-            //   - bottom padding leaves room for the floating button
-            //     (button ~58dp + 18dp top/bottom margins ≈ 96dp; +24dp
-            //     breathing room) AND the bottom system navigation bar
-            //     handled by the button itself.
+            //   IMPORTANT: the scroll viewport occupies the FULL height of
+            //   the screen — no top padding for status bar or header here.
+            //   The header-clearance gap is supplied as a leading Spacer
+            //   INSIDE the scroll list so that when the user scrolls up,
+            //   the actual content rises into the header area and becomes
+            //   visible THROUGH the transparent pinned header. If we
+            //   reserved the gap with `Modifier.padding(top = …)` instead,
+            //   the scroll viewport would start below the header and any
+            //   content scrolled past that boundary would be clipped — the
+            //   header zone would just show empty page background.
+            //
+            //   `imePadding()` shrinks the viewport above the keyboard so
+            //   BasicTextField's built-in bring-into-view can lift the
+            //   focused field above the IME.
+            val density = LocalDensity.current
+            val imeBottomPx = WindowInsets.ime.getBottom(density)
+            val isImeVisible = imeBottomPx > 0
             val scroll = rememberScrollState()
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(top = HEADER_HEIGHT_DP)
                     .imePadding()
                     .verticalScroll(scroll)
-                    .graphicsLayer { translationY = elastic.verticalOverscroll.floatValue }
+                    .graphicsLayer {
+                        // While the keyboard is up we DON'T paint the elastic
+                        // translation. Reason: a focused BasicTextField has
+                        // a BringIntoViewRequester that constantly re-aligns
+                        // the field above the IME. If we translate the column
+                        // every time the user swipes past the edge, the
+                        // requester fires a counter-scroll, which we then
+                        // partially absorb into the rubber band, which the
+                        // requester fights again — perceived as the cursor
+                        // and the entire field "shaking" or "twitching".
+                        // The overscroll value still accumulates internally
+                        // and springs back on lift, we just don't render it.
+                        translationY = if (isImeVisible) 0f else elastic.verticalOverscroll.floatValue
+                    }
                     .padding(horizontal = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                // Header-clearance: status-bar inset + the 54dp header band.
+                // Both are inside the scroll list so they slide off-screen
+                // when the user scrolls up, letting content reach the
+                // transparent header zone.
+                Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+                Spacer(modifier = Modifier.height(HEADER_HEIGHT_DP))
                 content()
                 // Reserve space so the last input row can scroll above the
                 // floating button (and above the IME when it's open).
