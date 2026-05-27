@@ -54,11 +54,17 @@ import com.wellness.app.ui.components.SectionTitle
 import com.wellness.app.ui.components.rememberElasticOverscroll
 import com.wellness.app.ui.components.screenHPad
 import com.wellness.app.ui.icons.SolarIcon
+import com.wellness.app.ui.state.Dates
 import com.wellness.app.ui.state.Habit
 import com.wellness.app.ui.state.LocalAppState
 import com.wellness.app.ui.state.TaskItem
 import com.wellness.app.ui.state.TaskStatus
 import com.wellness.app.ui.theme.Wellness
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
+import java.time.LocalTime
 
 // -------- Tuning constants for the collapsing-header animation -----------------
 
@@ -386,7 +392,7 @@ fun PlanScreen(
             SectionTitle("Расписание на сегодня") {
                 IconButtonRound(icon = "add-circle-bold-duotone", accent = true, onClick = onAddTask)
             }
-            ScheduleList(state.tasks)
+            ScheduleList(state.tasksToday())
         }
 
         // ------------- LAYER 3 : pinned title ---------------------------------
@@ -493,6 +499,8 @@ private fun HabitCell(
     ringTargetScale: Float,
     visibleMiniCount: Int,
 ) {
+    val todayKey = Dates.todayKey()
+    val progressCount = habit.progressOn(todayKey)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.width(StripCellWidth),
@@ -537,7 +545,7 @@ private fun HabitCell(
                 },
             contentAlignment = Alignment.Center,
         ) {
-            val progress = if (habit.target == 0) 0f else habit.progress.toFloat() / habit.target
+            val progress = if (habit.target == 0) 0f else progressCount.toFloat() / habit.target
             ProgressRing(
                 progress = progress,
                 color = habit.color,
@@ -573,9 +581,9 @@ private fun HabitCell(
             )
             Text(
                 text = if (habit.unit.isEmpty()) {
-                    "${habit.progress}/${habit.target}"
+                    "$progressCount/${habit.target}"
                 } else {
-                    "${habit.progress}/${habit.target} ${habit.unit}"
+                    "$progressCount/${habit.target} ${habit.unit}"
                 },
                 color = Wellness.colors.muted,
                 style = Wellness.typography.bodySmall,
@@ -591,16 +599,36 @@ private fun HabitCell(
 
 @Composable
 private fun ScheduleList(tasks: List<TaskItem>) {
-    val past = tasks.filter { it.status == TaskStatus.Done }
-    val live = tasks.firstOrNull { it.status == TaskStatus.Live }
-    val upcoming = tasks.filter { it.status == TaskStatus.Upcoming }
+    val state = LocalAppState.current
+    val dateKey = Dates.todayKey()
+
+    // Tick once a minute so live/upcoming/past partitioning stays current.
+    var nowMin by remember { mutableIntStateOf(LocalTime.now().toSecondOfDay() / 60) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000)
+            nowMin = LocalTime.now().toSecondOfDay() / 60
+        }
+    }
+    val sorted = tasks.sortedBy { it.startMinutes }
+    val past = sorted.filter { it.statusAt(nowMin, dateKey) == TaskStatus.Done }
+    val live = sorted.firstOrNull { it.statusAt(nowMin, dateKey) == TaskStatus.Live }
+    val upcoming = sorted.filter { it.statusAt(nowMin, dateKey) == TaskStatus.Upcoming }
 
     Column(
         modifier = Modifier.screenHPad(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        live?.let { TaskCard(it) }
-        upcoming.forEach { TaskCard(it) }
+        if (sorted.isEmpty()) {
+            Text(
+                "Расписания на сегодня нет — добавь первую задачу",
+                color = Wellness.colors.muted,
+                style = Wellness.typography.bodySmall,
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
+        }
+        live?.let { TaskCard(it, nowMin, dateKey) { state.toggleTaskDone(it.id) } }
+        upcoming.forEach { t -> TaskCard(t, nowMin, dateKey) { state.toggleTaskDone(t.id) } }
         if (past.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
             Text(
@@ -609,17 +637,18 @@ private fun ScheduleList(tasks: List<TaskItem>) {
                 style = Wellness.typography.labelMedium,
                 modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
             )
-            past.forEach { TaskCard(it) }
+            past.forEach { t -> TaskCard(t, nowMin, dateKey) { state.toggleTaskDone(t.id) } }
         }
     }
 }
 
 @Composable
-private fun TaskCard(task: TaskItem) {
-    val isPast = task.status == TaskStatus.Done
-    val isLive = task.status == TaskStatus.Live
+private fun TaskCard(task: TaskItem, nowMin: Int, dateKey: String, onToggle: () -> Unit) {
+    val status = task.statusAt(nowMin, dateKey)
+    val isPast = status == TaskStatus.Done
+    val isLive = status == TaskStatus.Live
 
-    val accentColor = when (task.status) {
+    val accentColor = when (status) {
         TaskStatus.Live -> Wellness.colors.accent
         else -> Wellness.colors.text
     }
@@ -635,46 +664,54 @@ private fun TaskCard(task: TaskItem) {
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // Left: a thin vertical accent stripe + soft circle bullet.
-            // Live: filled accent; Past: hollow muted circle; Upcoming: hollow text-coloured.
-            Box(
+            // Tappable status bullet — single tap toggles done state for today.
+            com.wellness.app.ui.components.NoFeedbackButton(
+                onClick = onToggle,
                 modifier = Modifier.size(28.dp),
-                contentAlignment = Alignment.Center,
             ) {
-                when {
-                    isLive -> Box(
-                        Modifier
-                            .size(14.dp)
-                            .background(Wellness.colors.accent, RoundedCornerShape(999.dp))
-                    )
-                    isPast -> Box(
-                        Modifier
-                            .size(16.dp)
-                            .background(Wellness.colors.muted.copy(alpha = 0.45f), RoundedCornerShape(999.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        SolarIcon(name = "check-read-bold", tint = Wellness.colors.bg, size = 10.dp)
+                Box(
+                    modifier = Modifier.size(28.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    when {
+                        isPast -> Box(
+                            Modifier
+                                .size(20.dp)
+                                .background(task.color.copy(alpha = 0.85f), RoundedCornerShape(999.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            SolarIcon(name = "check-read-bold", tint = Wellness.colors.bg, size = 12.dp)
+                        }
+                        isLive -> Box(
+                            Modifier
+                                .size(14.dp)
+                                .background(Wellness.colors.accent, RoundedCornerShape(999.dp))
+                        )
+                        else -> Box(
+                            Modifier
+                                .size(20.dp)
+                                .background(task.color.copy(alpha = 0.18f), RoundedCornerShape(999.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            SolarIcon(name = task.icon, tint = task.color, size = 12.dp)
+                        }
                     }
-                    else -> Box(
-                        Modifier
-                            .size(10.dp)
-                            .background(Wellness.colors.muted.copy(alpha = 0.55f), RoundedCornerShape(999.dp))
-                    )
                 }
             }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(task.time, color = timeColor, style = Wellness.typography.titleSmall)
+                    Text(task.startTime, color = timeColor, style = Wellness.typography.titleSmall)
                     Spacer(Modifier.width(8.dp))
-                    Text(task.duration, color = Wellness.colors.muted, style = Wellness.typography.bodySmall)
+                    Text(task.durationLabel, color = Wellness.colors.muted, style = Wellness.typography.bodySmall)
                 }
                 Spacer(Modifier.height(2.dp))
                 Text(task.name, color = nameColor, style = Wellness.typography.titleMedium)
-                if (task.statusText.isNotBlank()) {
+                val statusText = task.statusTextAt(nowMin, dateKey)
+                if (statusText.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        task.statusText,
+                        statusText,
                         color = if (isLive) accentColor else Wellness.colors.muted,
                         style = Wellness.typography.bodySmall,
                     )

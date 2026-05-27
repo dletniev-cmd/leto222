@@ -14,6 +14,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,13 +32,32 @@ import com.wellness.app.ui.components.SectionTitle
 import com.wellness.app.ui.components.WCard
 import com.wellness.app.ui.components.screenHPad
 import com.wellness.app.ui.icons.SolarIcon
+import com.wellness.app.ui.state.Dates
 import com.wellness.app.ui.state.Habit
 import com.wellness.app.ui.state.LocalAppState
+import com.wellness.app.ui.state.TaskItem
+import com.wellness.app.ui.state.TaskStatus
 import com.wellness.app.ui.theme.Wellness
+import kotlinx.coroutines.delay
+import java.time.LocalTime
 
 @Composable
 fun HomeScreen(@Suppress("UNUSED_PARAMETER") onAddWeight: () -> Unit = {}) {
     val state = LocalAppState.current
+
+    // Tick once a minute so "Идёт сейчас" / "Через 1ч 35м" stays current
+    // without forcing the user to navigate away and back.
+    var nowMin by remember { mutableIntStateOf(LocalTime.now().toSecondOfDay() / 60) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000)
+            nowMin = LocalTime.now().toSecondOfDay() / 60
+        }
+    }
+    val dateKey = Dates.todayKey()
+    val today = state.habitsToday()
+    val tasksToday = state.tasksToday()
+
     ScreenScaffold {
         ScreenHeader(
             title = "Летифай",
@@ -46,26 +70,24 @@ fun HomeScreen(@Suppress("UNUSED_PARAMETER") onAddWeight: () -> Unit = {}) {
         Box(Modifier.height(12.dp))
 
         SectionTitle("Сейчас")
-        NowTaskCard()
+        NowTaskCard(tasksToday = tasksToday, nowMin = nowMin, dateKey = dateKey)
         Box(Modifier.height(8.dp))
 
-        val done = state.todayHabits.count { it.done }
+        val done = today.count { it.isDoneOn(dateKey) }
         SectionTitle("Привычки") {
             Text(
-                "$done из ${state.todayHabits.size}",
+                if (today.isEmpty()) "—" else "$done из ${today.size}",
                 color = Wellness.colors.muted,
                 style = Wellness.typography.bodySmall
             )
         }
-        HabitsList()
+        HabitsList(today = today, dateKey = dateKey)
     }
 }
 
 @Composable
 private fun HeroCard() {
     val state = LocalAppState.current
-    // Big ring lives directly on the background — no container plate. Stats
-    // sit in a separate, gentler card to the right so the ring can breathe.
     Row(
         Modifier
             .fillMaxWidth()
@@ -136,39 +158,89 @@ private fun Stat(icon: String, color: Color, value: String, suffix: String, labe
     }
 }
 
+/**
+ * The "right now" hero card on the home screen. Prefer a live task, then
+ * the next upcoming task, then fall back to a friendly "ничего не
+ * запланировано" placeholder when the day is fully clear. The ring shows
+ * progress through the current task's time window (0% at start → 100% at
+ * end) so the user can glance at it and know how much of the slot is left.
+ */
 @Composable
-private fun NowTaskCard() {
-    val state = LocalAppState.current
-    val live = state.tasks.firstOrNull { it.status == com.wellness.app.ui.state.TaskStatus.Live } ?: state.tasks.first()
+private fun NowTaskCard(tasksToday: List<TaskItem>, nowMin: Int, dateKey: String) {
+    val live = tasksToday.firstOrNull { it.statusAt(nowMin, dateKey) == TaskStatus.Live }
+    val next = live ?: tasksToday
+        .filter { it.statusAt(nowMin, dateKey) == TaskStatus.Upcoming }
+        .minByOrNull { it.startMinutes }
+
     WCard(
         modifier = Modifier.screenHPad(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
     ) {
+        if (next == null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .background(Wellness.colors.track, RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    SolarIcon(name = "moon-stars-bold-duotone", tint = Wellness.colors.muted, size = 22.dp)
+                }
+                Box(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Свободно", color = Wellness.colors.text, style = Wellness.typography.titleMedium)
+                    Text("На сегодня задач нет", color = Wellness.colors.muted, style = Wellness.typography.bodySmall)
+                }
+            }
+            return@WCard
+        }
+
+        val isLive = next === live
+        val progress = if (isLive) {
+            ((nowMin - next.startMinutes).toFloat() /
+                (next.endMinutes - next.startMinutes).coerceAtLeast(1)).coerceIn(0f, 1f)
+        } else 0f
+        val ringLabel = if (isLive) "${(next.endMinutes - nowMin).coerceAtLeast(0)}м"
+                        else next.startTime
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
-                        .background(Wellness.colors.accentSoft, RoundedCornerShape(999.dp))
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .background(
+                            if (isLive) Wellness.colors.accentSoft else Wellness.colors.track,
+                            RoundedCornerShape(999.dp),
+                        )
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
                 ) {
-                    LiveDot()
-                    Box(Modifier.width(6.dp))
-                    Text("Идёт сейчас", color = Wellness.colors.accent, style = Wellness.typography.labelMedium)
+                    if (isLive) {
+                        LiveDot()
+                        Box(Modifier.width(6.dp))
+                    }
+                    Text(
+                        if (isLive) "Идёт сейчас" else "Следующее",
+                        color = if (isLive) Wellness.colors.accent else Wellness.colors.muted,
+                        style = Wellness.typography.labelMedium,
+                    )
                 }
                 Box(Modifier.height(6.dp))
-                Text(live.name, color = Wellness.colors.text, style = Wellness.typography.titleLarge)
+                Text(next.name, color = Wellness.colors.text, style = Wellness.typography.titleLarge)
                 Box(Modifier.height(2.dp))
-                Text("До конца 23 мин", color = Wellness.colors.muted, style = Wellness.typography.bodySmall)
+                Text(
+                    next.statusTextAt(nowMin, dateKey),
+                    color = Wellness.colors.muted,
+                    style = Wellness.typography.bodySmall,
+                )
             }
             Box(Modifier.size(54.dp), contentAlignment = Alignment.Center) {
                 ProgressRing(
-                    progress = 0.55f,
-                    color = Wellness.colors.accent,
+                    progress = progress,
+                    color = if (isLive) Wellness.colors.accent else next.color,
                     size = 54.dp,
                     strokeWidth = 5.dp,
                 )
-                Text("23м", color = Wellness.colors.text, style = Wellness.typography.labelLarge)
+                Text(ringLabel, color = Wellness.colors.text, style = Wellness.typography.labelLarge)
             }
         }
     }
@@ -184,41 +256,66 @@ private fun LiveDot() {
 }
 
 @Composable
-private fun HabitsList() {
+private fun HabitsList(today: List<Habit>, dateKey: String) {
     val state = LocalAppState.current
     WCard(
         modifier = Modifier.screenHPad(),
         contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp),
     ) {
+        if (today.isEmpty()) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "Сегодня свободно — добавь первую привычку в Плане",
+                    color = Wellness.colors.muted,
+                    style = Wellness.typography.bodySmall,
+                )
+            }
+            return@WCard
+        }
         Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-            state.todayHabits.forEachIndexed { idx, h ->
-                HabitRow(h) {
-                    state.todayHabits[idx] = h.copy(done = !h.done)
-                }
+            today.forEach { h ->
+                HabitRow(h, dateKey) { state.tapHabit(h.id) }
             }
         }
     }
 }
 
 @Composable
-private fun HabitRow(h: Habit, onToggle: () -> Unit) {
+private fun HabitRow(h: Habit, dateKey: String, onTap: () -> Unit) {
+    val progress = h.progressOn(dateKey)
+    val done = h.isDoneOn(dateKey)
+    val ringFraction = if (h.target <= 0) 0f else (progress.toFloat() / h.target).coerceIn(0f, 1f)
     Row(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        NoFeedbackButton(onClick = onToggle, modifier = Modifier.size(22.dp)) {
-            Box(
-                Modifier
-                    .size(22.dp)
-                    .background(
-                        if (h.done) Wellness.colors.accent else Wellness.colors.track,
-                        RoundedCornerShape(999.dp)
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (h.done) SolarIcon(name = "check-read-bold", tint = Color(0xFF0C1F12), size = 14.dp)
+        NoFeedbackButton(onClick = onTap, modifier = Modifier.size(28.dp)) {
+            // Ring + fill — fills as progress reaches target, becomes a solid
+            // tick when done. For target=1 it's effectively a binary checkbox.
+            Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                ProgressRing(
+                    progress = if (done) 1f else ringFraction,
+                    color = if (done) h.color else h.color.copy(alpha = 0.85f),
+                    size = 28.dp,
+                    strokeWidth = 3.dp,
+                )
+                if (done) {
+                    Box(
+                        Modifier
+                            .size(16.dp)
+                            .background(h.color, RoundedCornerShape(999.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        SolarIcon(name = "check-read-bold", tint = Color(0xFF0C1F12), size = 10.dp)
+                    }
+                }
             }
         }
         Box(Modifier.width(12.dp))
@@ -233,17 +330,19 @@ private fun HabitRow(h: Habit, onToggle: () -> Unit) {
         Box(Modifier.width(12.dp))
         Text(
             h.name,
-            color = if (h.done) Wellness.colors.muted else Wellness.colors.text,
+            color = if (done) Wellness.colors.muted else Wellness.colors.text,
             style = Wellness.typography.bodyMedium.copy(
                 fontWeight = FontWeight.SemiBold,
-                textDecoration = if (h.done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                textDecoration = if (done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
             ),
             modifier = Modifier.weight(1f),
         )
-        Text(
-            "${h.progress}/${h.target}",
-            color = Wellness.colors.muted,
-            style = Wellness.typography.bodySmall,
-        )
+        if (h.target > 1) {
+            Text(
+                "$progress/${h.target}",
+                color = Wellness.colors.muted,
+                style = Wellness.typography.bodySmall,
+            )
+        }
     }
 }

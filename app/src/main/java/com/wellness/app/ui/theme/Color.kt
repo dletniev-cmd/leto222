@@ -58,25 +58,25 @@ object WellnessColors {
  * pleasantly on both light and dark backgrounds.
  */
 val AccentPalette: List<Color> = listOf(
-    // Row 1: violets → blues
-    Color(0xFFB084F5), // lavender purple
-    Color(0xFF8E7CF0), // violet
+    // Row 1: lilac → cyan → mint
+    Color(0xFFC28BFF), // lavender
+    Color(0xFF9889FB), // soft violet
     Color(0xFF6E86F2), // periwinkle
-    Color(0xFF5AA7FF), // blue
-    Color(0xFF4EC4E8), // sky cyan
-    Color(0xFF45CBC5), // teal cyan
-    // Row 2: greens → yellows
-    Color(0xFF4ABFA0), // teal green
-    Color(0xFF7CD992), // mint
-    Color(0xFF66CF6E), // green
-    Color(0xFFB7D858), // lime
-    Color(0xFFEFCF4A), // yellow
+    Color(0xFF4EBEFF), // sky
+    Color(0xFF3FD5C5), // aqua teal
+    Color(0xFF5BD89A), // mint
+    // Row 2: lime → warm
+    Color(0xFFB7DD5C), // lime
+    Color(0xFFFFD24A), // sunny yellow
     Color(0xFFFFB347), // amber
-    // Row 3: oranges → pinks
-    Color(0xFFFF8C5A), // orange
-    Color(0xFFF77D6D), // coral
-    Color(0xFFF06262), // red
-    Color(0xFFFF6B9D), // pink
-    Color(0xFFE57AC9), // magenta
-    Color(0xFFD08CE2), // rose lilac
+    Color(0xFFFF8E63), // peach
+    Color(0xFFFF7568), // coral
+    Color(0xFFF26280), // berry
+    // Row 3: pink → neutrals
+    Color(0xFFFF6FAA), // pink
+    Color(0xFFE37CD0), // magenta
+    Color(0xFFC58FE6), // rose lilac
+    Color(0xFF8FA0B3), // slate
+    Color(0xFFA89B7F), // sand
+    Color(0xFFE8E8EC), // mist
 )

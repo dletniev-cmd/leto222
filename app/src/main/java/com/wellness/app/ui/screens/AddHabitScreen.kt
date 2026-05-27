@@ -1,131 +1,276 @@
 package com.wellness.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.wellness.app.ui.components.ChipRow
 import com.wellness.app.ui.components.FieldLabel
-import com.wellness.app.ui.components.IconCellPicker
-import com.wellness.app.ui.components.NoFeedbackButton
-import com.wellness.app.ui.components.OverlayScreen
+import com.wellness.app.ui.components.NumberStepper
 import com.wellness.app.ui.components.TextInput
+import com.wellness.app.ui.components.TimePickerInline
+import com.wellness.app.ui.components.ToggleRow
+import com.wellness.app.ui.components.WeekdaysPicker
+import com.wellness.app.ui.components.WizardIconCatalog
+import com.wellness.app.ui.components.WizardIconGrid
+import com.wellness.app.ui.components.WizardPreviewTile
+import com.wellness.app.ui.components.WizardScaffold
 import com.wellness.app.ui.icons.SolarIcon
 import com.wellness.app.ui.state.Habit
 import com.wellness.app.ui.state.LocalAppState
+import com.wellness.app.ui.state.scheduleTextFor
 import com.wellness.app.ui.theme.AccentPalette
 import com.wellness.app.ui.theme.Wellness
 
-private val habitIcons = listOf(
-    "bottle-bold-duotone", "book-bookmark-bold-duotone", "meditation-round-bold-duotone",
-    "dumbbell-large-bold-duotone", "running-2-bold-duotone", "leaf-bold-duotone",
-    "heart-pulse-bold-duotone", "smile-circle-outline",
-)
+private val habitUnitPresets = listOf("раз", "стаканов", "страниц", "мин", "км", "шагов", "минут", "ч", "грамм", "ккал")
 
-private val days = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
-
+/**
+ * Three-step "create habit" wizard. The function keeps the original name
+ * (`AddHabitScreen`) so `WellnessApp` keeps compiling — under the hood it's
+ * a real wizard with progress bar and gated CTA.
+ *
+ * Step 1 — Что и сколько: name + target count + unit
+ * Step 2 — Стиль:        icon + colour + live preview tile
+ * Step 3 — Когда:        days of week + optional reminder time
+ */
 @Composable
 fun AddHabitScreen(onBack: () -> Unit) {
     val state = LocalAppState.current
+
+    var step by remember { mutableIntStateOf(1) }
     var name by remember { mutableStateOf("") }
-    var icon by remember { mutableStateOf(habitIcons[0]) }
-    var color by remember { mutableStateOf<Color>(AccentPalette[0]) }
-    var target by remember { mutableStateOf("1") }
+    var target by remember { mutableIntStateOf(1) }
     var unit by remember { mutableStateOf("раз") }
-    val selectedDays = remember { mutableStateOf(setOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")) }
+    var icon by remember { mutableStateOf(WizardIconCatalog[0]) }
+    var color by remember { mutableStateOf<Color>(AccentPalette[1]) }
+    var days by remember { mutableStateOf(setOf(1, 2, 3, 4, 5, 6, 7)) }
+    var remind by remember { mutableStateOf(false) }
+    var remindH by remember { mutableIntStateOf(8) }
+    var remindM by remember { mutableIntStateOf(30) }
 
-    OverlayScreen(
+    val stepLabels = listOf("Что и сколько", "Стиль", "Когда")
+    val canAdvance = when (step) {
+        1 -> name.isNotBlank() && target >= 1
+        2 -> true
+        3 -> days.isNotEmpty()
+        else -> false
+    }
+    val primaryLabel = if (step < 3) "Далее" else "Создать привычку"
+
+    WizardScaffold(
         title = "Новая привычка",
-        onBack = onBack,
-        primaryLabel = "Создать",
-        primaryEnabled = name.isNotBlank(),
-        onPrimary = {
-            state.habits.add(
-                Habit(
-                    id = (state.habits.maxOfOrNull { it.id } ?: 0) + 1,
-                    name = name,
-                    icon = icon,
-                    color = color,
-                    target = target.toIntOrNull() ?: 1,
-                    progress = 0,
-                    unit = unit,
-                    schedule = if (selectedDays.value.size == 7) "Ежедневно" else selectedDays.value.joinToString(" "),
-                )
-            )
-            onBack()
+        stepCount = 3,
+        currentStep = step,
+        stepLabel = "Шаг $step из 3 · ${stepLabels[step - 1]}",
+        onBack = {
+            if (step > 1) step-- else onBack()
         },
-    ) {
-        FieldLabel("Название")
-        TextInput(value = name, placeholder = "Например: Прочитать 10 страниц", onValueChange = { name = it })
-
-        FieldLabel("Иконка")
-        IconCellPicker(icons = habitIcons, selected = icon, tint = color, onSelect = { icon = it })
-
-        FieldLabel("Цвет")
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            AccentPalette.forEach { c ->
-                val active = c.value == color.value
-                NoFeedbackButton(onClick = { color = c }, modifier = Modifier.size(36.dp)) {
-                    Box(
-                        Modifier
-                            .size(36.dp)
-                            .background(if (active) c.copy(alpha = 0.22f) else Color.Transparent, RoundedCornerShape(999.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Box(Modifier.size(24.dp).background(c, RoundedCornerShape(999.dp)))
-                    }
-                }
+        primaryLabel = primaryLabel,
+        primaryEnabled = canAdvance,
+        onPrimary = {
+            if (step < 3) {
+                step++
+            } else {
+                val remindAt = if (remind) "%02d:%02d".format(remindH, remindM) else null
+                state.addHabit(
+                    Habit(
+                        id = 0,
+                        name = name.trim(),
+                        icon = icon,
+                        color = color,
+                        target = target.coerceAtLeast(1),
+                        unit = unit,
+                        days = days,
+                        remind = remind,
+                        remindAt = remindAt,
+                    )
+                )
+                onBack()
             }
-        }
-
-        FieldLabel("Цель")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextInput(
-                value = target,
-                placeholder = "1",
-                onValueChange = { target = it.filter { c -> c.isDigit() } },
-                keyboardType = KeyboardType.Number,
-                modifier = Modifier.weight(1f),
+        },
+        showSecondary = step > 1,
+        secondaryLabel = "Назад",
+        onSecondary = { if (step > 1) step-- },
+    ) {
+        when (step) {
+            1 -> HabitStep1(
+                name = name, onNameChange = { name = it },
+                target = target, onTargetChange = { target = it },
+                unit = unit, onUnitChange = { unit = it },
             )
-            TextInput(
-                value = unit,
-                placeholder = "раз / мин / страниц…",
-                onValueChange = { unit = it },
-                modifier = Modifier.weight(2f),
+            2 -> HabitStep2(
+                name = name, target = target, unit = unit,
+                icon = icon, onIconChange = { icon = it },
+                color = color, onColorChange = { color = it },
+            )
+            3 -> HabitStep3(
+                days = days, onDaysChange = { days = it },
+                remind = remind, onRemindChange = { remind = it },
+                remindH = remindH, remindM = remindM,
+                onTimeChange = { h, m -> remindH = h; remindM = m },
             )
         }
+    }
+}
 
-        FieldLabel("Дни недели")
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-            days.forEach { d ->
-                val active = d in selectedDays.value
-                NoFeedbackButton(onClick = {
-                    selectedDays.value = if (active) selectedDays.value - d else selectedDays.value + d
-                }, modifier = Modifier.weight(1f)) {
+@Composable
+private fun HabitStep1(
+    name: String, onNameChange: (String) -> Unit,
+    target: Int, onTargetChange: (Int) -> Unit,
+    unit: String, onUnitChange: (String) -> Unit,
+) {
+    FieldLabel("Название")
+    TextInput(value = name, placeholder = "Например: Прочитать 10 страниц", onValueChange = onNameChange)
+
+    FieldLabel("Цель в день")
+    NumberStepper(value = target, min = 1, max = 50, onChange = onTargetChange)
+
+    FieldLabel("Единица измерения")
+    TextInput(value = unit, placeholder = "раз / страниц / мин…", onValueChange = onUnitChange)
+    Spacer(Modifier.height(6.dp))
+    ChipRow(options = habitUnitPresets, selected = unit, onSelect = onUnitChange)
+}
+
+@Composable
+private fun HabitStep2(
+    name: String, target: Int, unit: String,
+    icon: String, onIconChange: (String) -> Unit,
+    color: Color, onColorChange: (Color) -> Unit,
+) {
+    val previewMeta = if (target > 1) "$target $unit · в день" else "Раз в день"
+    WizardPreviewTile(icon = icon, color = color, title = name, meta = previewMeta)
+
+    FieldLabel("Иконка")
+    WizardIconGrid(selected = icon, tint = color, onSelect = onIconChange)
+
+    FieldLabel("Цвет")
+    ColorPaletteGrid(selected = color, onSelect = onColorChange)
+}
+
+@Composable
+private fun HabitStep3(
+    days: Set<Int>, onDaysChange: (Set<Int>) -> Unit,
+    remind: Boolean, onRemindChange: (Boolean) -> Unit,
+    remindH: Int, remindM: Int,
+    onTimeChange: (Int, Int) -> Unit,
+) {
+    FieldLabel("Дни недели")
+    WeekdaysPicker(selected = days, onChange = onDaysChange)
+    Spacer(Modifier.height(6.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        DayPreset("Ежедневно", days.size == 7) { onDaysChange(setOf(1, 2, 3, 4, 5, 6, 7)) }
+        DayPreset("Будни", days == setOf(1, 2, 3, 4, 5)) { onDaysChange(setOf(1, 2, 3, 4, 5)) }
+        DayPreset("Выходные", days == setOf(6, 7)) { onDaysChange(setOf(6, 7)) }
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        text = "Расписание: ${scheduleTextFor(days)}",
+        color = Wellness.colors.muted,
+        style = Wellness.typography.bodySmall,
+        modifier = Modifier.padding(start = 4.dp),
+    )
+
+    FieldLabel("Напоминание")
+    ToggleRow(
+        title = "Напомнить о привычке",
+        subtitle = if (remind) "В выбранное время каждый день из расписания" else "Без напоминаний",
+        on = remind,
+        onToggle = onRemindChange,
+    )
+    if (remind) {
+        Spacer(Modifier.height(8.dp))
+        TimePickerInline(hour = remindH, minute = remindM, onChange = onTimeChange)
+    }
+}
+
+@Composable
+private fun RowScope.DayPreset(label: String, active: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .height(36.dp)
+            .background(
+                if (active) Wellness.colors.accentSoft else Wellness.colors.track,
+                RoundedCornerShape(999.dp),
+            )
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = if (active) Wellness.colors.accent else Wellness.colors.text,
+            style = Wellness.typography.labelMedium,
+        )
+    }
+}
+
+/**
+ * 6×3 colour palette. Selected swatch grows + halos with its own colour at
+ * low alpha; unselected swatches are simple discs.
+ */
+@Composable
+fun ColorPaletteGrid(selected: Color, onSelect: (Color) -> Unit) {
+    val rows = AccentPalette.chunked(6)
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        rows.forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                row.forEach { c ->
+                    val active = c.value == selected.value
                     Box(
-                        Modifier
-                            .background(if (active) Wellness.colors.accentSoft else Wellness.colors.track, RoundedCornerShape(12.dp))
-                            .padding(vertical = 10.dp)
-                            .fillMaxWidth(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(d, color = if (active) Wellness.colors.accent else Wellness.colors.text, style = Wellness.typography.labelMedium)
+                        if (active) {
+                            Box(
+                                Modifier
+                                    .size(44.dp)
+                                    .background(c.copy(alpha = 0.22f), CircleShape)
+                                    .clickable { onSelect(c) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(28.dp)
+                                        .background(c, CircleShape),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    SolarIcon(name = "check-read-bold", tint = Color(0xFF0C1F12), size = 14.dp)
+                                }
+                            }
+                        } else {
+                            Box(
+                                Modifier
+                                    .size(34.dp)
+                                    .background(c, CircleShape)
+                                    .clickable { onSelect(c) },
+                            )
+                        }
                     }
                 }
             }
