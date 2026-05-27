@@ -63,6 +63,14 @@ class AppState(private val bindingStore: TelegramBindingStore? = null) {
     fun bindTelegram(user: TelegramAuth.TelegramUser) {
         telegramUser = user
         bindingStore?.save(user)
+        // Sync the canonical display name into `userName` so the profile
+        // editor seeds with the same value that the profile header shows
+        // (otherwise the editor opens with the stale "Иван" placeholder
+        // while the header proudly displays the TG first/last name).
+        val tgName = user.displayName.trim()
+        if (tgName.isNotEmpty()) {
+            userName = tgName
+        }
     }
 
     /**
