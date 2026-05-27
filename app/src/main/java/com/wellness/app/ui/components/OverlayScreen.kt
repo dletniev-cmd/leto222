@@ -6,14 +6,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imeNestedScroll
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -56,7 +54,7 @@ import com.wellness.app.ui.theme.Wellness
  * Elastic overscroll is kept on the scroll column only — the pinned header
  * and the floating button stay perfectly still.
  */
-@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OverlayScreen(
     title: String,
@@ -92,7 +90,6 @@ fun OverlayScreen(
                     .padding(top = HEADER_HEIGHT_DP)
                     .imePadding()
                     .verticalScroll(scroll)
-                    .imeNestedScroll()
                     .graphicsLayer { translationY = elastic.verticalOverscroll.floatValue }
                     .padding(horizontal = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
