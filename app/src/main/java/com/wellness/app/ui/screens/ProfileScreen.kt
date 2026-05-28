@@ -122,20 +122,17 @@ fun ProfileScreen(
             )
         }
 
-        // ── Goal progress card ───────────────────────────────────────────
+        // ── Goal progress block ──────────────────────────────────────────
         //
-        // Tapping anywhere on this card opens the detail screen. We
-        // wrap the entire card in `noFeedbackClick` rather than only
-        // the bar so the user has a generously sized hit target.
+        // Container removed per user request — bare progress bar + caption
+        // sit directly on the screen background. Hit target stays the full
+        // width so tapping anywhere on the row opens the detail screen.
         Box(
             Modifier
                 .fillMaxWidth()
                 .screenHPad()
                 .padding(bottom = 14.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(Wellness.colors.container, RoundedCornerShape(22.dp))
-                .noFeedbackClick(onClick = onProgressDetail)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .noFeedbackClick(onClick = onProgressDetail),
         ) {
             Column {
                 GoalProgressBar(progress = breakdown.overall, modifier = Modifier.fillMaxWidth())
