@@ -113,6 +113,28 @@ object SolarIconLoader {
     )
 
     /**
+     * Icons that must be ready by the time the user opens the habit
+     * icon picker. Decoded immediately after the navbar icons, before
+     * the rest of the alphabetical sweep, so the 6×6 grid always paints
+     * with every cell filled — never the half-empty grid the user saw
+     * before. Keep in sync with HabitIconCatalog in AddHabitScreen.kt.
+     */
+    private val HABIT_CATALOG_ICONS = arrayOf(
+        "bottle-bold-duotone", "cup-paper-bold-duotone", "cup-hot-bold-duotone",
+        "tea-cup-bold-duotone", "wineglass-bold-duotone", "waterdrop-bold-duotone",
+        "plate-bold-duotone", "donut-bold-duotone", "chef-hat-bold-duotone",
+        "pill-bold-duotone", "leaf-bold-duotone", "scale-bold-duotone",
+        "dumbbell-bold-duotone", "running-bold-duotone", "walking-bold-duotone",
+        "bicycling-bold-duotone", "swimming-bold-duotone", "stretching-bold-duotone",
+        "heart-bold-duotone", "heart-pulse-bold-duotone", "meditation-bold-duotone",
+        "moon-stars-bold-duotone", "bed-bold-duotone", "smile-circle-bold-duotone",
+        "sun-bold-duotone", "sunrise-bold-duotone", "sunset-bold-duotone",
+        "flame-bold-duotone", "alarm-bold-duotone", "stopwatch-bold-duotone",
+        "book-bookmark-bold-duotone", "notebook-bold-duotone", "pen-bold-duotone",
+        "clipboard-check-bold-duotone", "star-bold-duotone", "stars-bold-duotone",
+    )
+
+    /**
      * Max edge in pixels for the rasterised SVG. 256px keeps every icon
      * crisp at the largest in-app call site (the 72dp Telegram glyph on
      * the bindings screen ≈ 216px on a 3x device) while keeping decode
@@ -195,6 +217,15 @@ object SolarIconLoader {
                     }
                     navbarReady.countDown()
                 }
+                // Then the habit-picker catalog so the 6×6 grid is fully
+                // populated by the time the user can possibly tap into
+                // "Иконка" — even a fast tester won't reach it before
+                // ~36 decodes (<1s in practice).
+                for (name in HABIT_CATALOG_ICONS) {
+                    if (!bitmaps.containsKey(name)) {
+                        decodeInto(loader, appContext, "$name.svg")
+                    }
+                }
                 // Now the rest. Sorted for determinism — easier to
                 // reproduce ordering bugs in profiles.
                 val assetManager = appContext.assets
@@ -203,9 +234,12 @@ object SolarIconLoader {
                     ?.filter { it.endsWith(".svg") }
                     ?.sorted()
                     ?: return@Thread
-                val navbarSet = NAVBAR_ICONS.mapTo(HashSet()) { "$it.svg" }
+                val priority = HashSet<String>().apply {
+                    NAVBAR_ICONS.forEach { add("$it.svg") }
+                    HABIT_CATALOG_ICONS.forEach { add("$it.svg") }
+                }
                 for (file in all) {
-                    if (file in navbarSet) continue
+                    if (file in priority) continue
                     val key = file.removeSuffix(".svg")
                     if (bitmaps.containsKey(key)) continue
                     decodeInto(loader, appContext, file)
@@ -220,6 +254,23 @@ object SolarIconLoader {
             // in well under our 800ms main-thread wait budget.
             priority = Thread.NORM_PRIORITY - 1
         }.start()
+    }
+
+    /**
+     * Decode any names in [names] that aren't yet in [bitmaps], using
+     * the calling thread. Must NOT be called from the main thread —
+     * `runBlocking` inside [decodeInto] would deadlock there. The
+     * habit picker uses this from a coroutine on Dispatchers.IO as
+     * a safety net in case prewarm hasn't reached the catalog yet
+     * (very unlikely after the priority bump, but free insurance).
+     */
+    fun ensureLoadedBlocking(appContext: Context, names: List<String>) {
+        val loader = get(appContext)
+        for (n in names) {
+            if (!bitmaps.containsKey(n)) {
+                decodeInto(loader, appContext, "$n.svg")
+            }
+        }
     }
 
     private fun decodeInto(loader: ImageLoader, appContext: Context, file: String) {

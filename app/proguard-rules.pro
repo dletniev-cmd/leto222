@@ -1,1 +1,4 @@
-# Keep nothing special; we don't minify in release for the prototype.
+# Default ProGuard rules.
+-dontwarn org.bouncycastle.**
+-dontwarn org.conscrypt.**
+-dontwarn org.openjsse.**
