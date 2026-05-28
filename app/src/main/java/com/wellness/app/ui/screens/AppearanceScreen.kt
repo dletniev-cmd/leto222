@@ -56,8 +56,8 @@ import com.wellness.app.ui.components.tabTitle
 import com.wellness.app.ui.icons.SolarIcon
 import com.wellness.app.ui.state.LocalAppState
 import com.wellness.app.ui.state.Tab
-import com.wellness.app.ui.theme.AccentPalette
 import com.wellness.app.ui.theme.ThemeMode
+import com.wellness.app.ui.theme.ThemePalette
 import com.wellness.app.ui.theme.Wellness
 import com.wellness.app.ui.theme.WellnessColors
 
@@ -153,7 +153,7 @@ private fun AppearanceRoot(onBack: () -> Unit, onNavbar: () -> Unit) {
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
             ) {
                 ColorPickerGrid(
-                    colors = AccentPalette,
+                    colors = ThemePalette,
                     selected = state.accent,
                     onSelect = { state.accent = it },
                 )

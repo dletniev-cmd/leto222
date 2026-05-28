@@ -43,8 +43,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
@@ -220,15 +228,15 @@ private fun HabitRootScreen(
                 },
             )
 
-            // Name field with mini icon+color preview
-            Box(Modifier.screenHPad().padding(top = 10.dp)) {
-                NamePreviewField(
-                    name = draft.name,
-                    icon = draft.icon,
-                    color = draft.color,
-                    onChange = { onDraft(draft.copy(name = it)) },
-                )
-            }
+            // Hero preview — big rounded coloured tile centred above the
+            // name field. Telegram "new folder" style: the user sees
+            // exactly the artwork they're configuring while editing.
+            HabitHeroPreview(
+                name = draft.name,
+                icon = draft.icon,
+                color = draft.color,
+                onChange = { onDraft(draft.copy(name = it)) },
+            )
 
             SectionLabel("ПАРАМЕТРЫ", topPad = 22.dp)
             SettingsCard(
@@ -424,30 +432,53 @@ private fun SectionLabel(text: String, topPad: androidx.compose.ui.unit.Dp = 16.
     )
 }
 
+/**
+ * Centred hero header for the New Habit screen. A 76dp rounded tile in
+ * the habit's current colour sits up top with the picked glyph in
+ * white; below it is a centred title-style text field for the habit
+ * name with a thin underline that fades in/out as the user types. The
+ * whole header reads as a live preview of the badge that will land on
+ * the Home screen.
+ */
 @Composable
-private fun NamePreviewField(name: String, icon: String, color: Color, onChange: (String) -> Unit) {
-    Row(
+private fun HabitHeroPreview(
+    name: String,
+    icon: String,
+    color: Color,
+    onChange: (String) -> Unit,
+) {
+    Column(
         Modifier
             .fillMaxWidth()
-            .background(Wellness.colors.container, RoundedCornerShape(18.dp))
-            .padding(horizontal = 14.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(top = 14.dp, bottom = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // Big habit tile — visually anchors the screen and previews the
+        // exact icon+colour combo the user is editing.
         Box(
             Modifier
-                .size(44.dp)
-                .background(color, RoundedCornerShape(13.dp)),
+                .size(76.dp)
+                .background(color, RoundedCornerShape(22.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            SolarIcon(name = icon, tint = Color.White, size = 24.dp)
+            SolarIcon(name = icon, tint = Color.White, size = 40.dp)
         }
-        Spacer(Modifier.width(12.dp))
-        Box(Modifier.weight(1f)) {
+        Spacer(Modifier.height(18.dp))
+        // Centred name field. The placeholder layer sits *under* the
+        // BasicTextField so the field stays full-width (the user's tap
+        // anywhere on the row focuses the input) while the placeholder
+        // visually centres the same way the typed text will.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp),
+            contentAlignment = Alignment.Center,
+        ) {
             if (name.isEmpty()) {
                 Text(
                     "Название привычки",
                     color = Wellness.colors.muted,
-                    style = Wellness.typography.titleSmall,
+                    style = Wellness.typography.titleLarge,
                 )
             }
             BasicTextField(
@@ -456,14 +487,24 @@ private fun NamePreviewField(name: String, icon: String, color: Color, onChange:
                 singleLine = true,
                 textStyle = TextStyle(
                     fontFamily = Manrope,
-                    fontSize = 17.sp,
+                    fontSize = 22.sp,
                     color = Wellness.colors.text,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 ),
                 cursorBrush = SolidColor(Wellness.colors.accent),
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
             )
         }
+        Spacer(Modifier.height(8.dp))
+        // Hairline below the name. Always rendered so the text field
+        // visually reads as an input even when empty.
+        Box(
+            Modifier
+                .fillMaxWidth(0.55f)
+                .height(1.dp)
+                .background(Wellness.colors.text.copy(alpha = 0.10f)),
+        )
     }
 }
 
@@ -512,46 +553,105 @@ private fun NoteCard(value: String, onChange: (String) -> Unit) {
 }
 
 /**
- * 6-column dense icon grid (TG-style). Cells are small monochrome tiles —
- * the selected one fills with the active colour tint. No tile background
- * for unselected items to keep the surface visually light, just like the
- * Telegram folder-icon picker.
+ * 6-column dense icon grid (TG-style). Cells are monochrome glyphs sized
+ * up so they read clearly inside the floating popover. The selected one
+ * tints in the active colour. Selection follows the finger continuously —
+ * touch down on a cell and drag across the grid, the highlight tracks
+ * the pointer until you lift, exactly like the colour picker right above.
  */
 @Composable
 private fun IconGrid(selected: String, tint: Color, onSelect: (String) -> Unit) {
     val icons = HabitIconCatalog
     val columns = 6
     val rows = (icons.size + columns - 1) / columns
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    val gap = 4.dp
+    val cellHeight = 52.dp
+
+    val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
+    val gapPx = with(density) { gap.toPx() }
+    val cellHeightPx = with(density) { cellHeight.toPx() }
+
+    var sizePx by remember { mutableStateOf(IntSize.Zero) }
+
+    fun cellIndex(pos: Offset): Int? {
+        if (sizePx.width <= 0) return null
+        val cellW = (sizePx.width - gapPx * (columns - 1)) / columns
+        val x = pos.x.coerceIn(0f, sizePx.width.toFloat())
+        val y = pos.y.coerceAtLeast(0f)
+        val col = (x / (cellW + gapPx)).toInt().coerceIn(0, columns - 1)
+        val row = (y / (cellHeightPx + gapPx)).toInt().coerceIn(0, rows - 1)
+        // Ignore gap strips so dragging through a gap doesn't reselect.
+        val colStart = col * (cellW + gapPx)
+        val rowStart = row * (cellHeightPx + gapPx)
+        if (x - colStart > cellW + 0.5f) return null
+        if (y - rowStart > cellHeightPx + 0.5f) return null
+        val idx = row * columns + col
+        return idx.takeIf { it in icons.indices }
+    }
+
+    var lastEmittedIdx by remember { mutableStateOf(-1) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onSizeChanged { sizePx = it }
+            .pointerInput(icons) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(
+                        requireUnconsumed = false,
+                        pass = PointerEventPass.Main,
+                    )
+                    cellIndex(down.position)?.let {
+                        if (it != lastEmittedIdx) {
+                            lastEmittedIdx = it
+                            onSelect(icons[it])
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                    }
+                    down.consume()
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Main)
+                        val change = event.changes.firstOrNull() ?: break
+                        if (!change.pressed) break
+                        cellIndex(change.position)?.let {
+                            if (it != lastEmittedIdx) {
+                                lastEmittedIdx = it
+                                onSelect(icons[it])
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                        }
+                        change.consume()
+                    }
+                    lastEmittedIdx = -1
+                }
+            },
+        verticalArrangement = Arrangement.spacedBy(gap),
+    ) {
         repeat(rows) { r ->
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(gap),
             ) {
                 repeat(columns) { c ->
                     val idx = r * columns + c
                     if (idx < icons.size) {
                         val ic = icons[idx]
                         val active = ic == selected
-                        // No background tile — selection is shown only by
-                        // tinting the icon glyph itself in the accent
-                        // colour. Everything else stays as a neutral
-                        // muted glyph, like a Telegram emoji panel.
                         Box(
                             Modifier
                                 .weight(1f)
-                                .height(44.dp)
-                                .noFeedbackClick { onSelect(ic) },
+                                .height(cellHeight),
                             contentAlignment = Alignment.Center,
                         ) {
                             SolarIcon(
                                 name = ic,
                                 tint = if (active) tint else Wellness.colors.muted,
-                                size = 24.dp,
+                                size = 30.dp,
                             )
                         }
                     } else {
-                        Box(Modifier.weight(1f).height(44.dp))
+                        Box(Modifier.weight(1f).height(cellHeight))
                     }
                 }
             }

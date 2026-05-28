@@ -149,9 +149,13 @@ fun <T> WheelPicker(
                     WheelRow(
                         text = label(values[idx]),
                         height = itemHeight,
-                        isSelected = idx == selectedIndex,
-                        textStyle = textStyle,
-                        selectedTextStyle = selectedTextStyle,
+                        // Always use the bigger "selected" style. The
+                        // off-centre rows shrink smoothly via the
+                        // graphicsLayer scale below — so the centre row
+                        // grows up to its full size as it approaches
+                        // the slot instead of *snapping* between two
+                        // typography styles on every snap-fling tick.
+                        textStyle = selectedTextStyle,
                         listState = listState,
                         index = idx,
                         itemHeightPx = itemHeightPx,
@@ -167,9 +171,7 @@ fun <T> WheelPicker(
 private fun WheelRow(
     text: String,
     height: Dp,
-    isSelected: Boolean,
     textStyle: TextStyle,
-    selectedTextStyle: TextStyle,
     listState: LazyListState,
     index: Int,
     itemHeightPx: Float,
@@ -199,7 +201,12 @@ private fun WheelRow(
     // hard transition. Combined with the DstIn mask above we get the
     // "smoothly fades out at the borders" feel.
     val alpha = (1f - t * t).coerceIn(0f, 1f)
-    val scale = lerp(1.0f, 0.78f, t)
+    // Wider scale range — the row in the centre slot is full-size,
+    // the rows at the very edge drop to ~58%. The transition is purely
+    // analog (no isSelected boolean swap), so the digits visibly grow
+    // and shrink as the wheel spins instead of clicking between two
+    // typography sizes.
+    val scale = lerp(1.0f, 0.58f, t)
 
     Box(
         modifier = Modifier
@@ -214,7 +221,7 @@ private fun WheelRow(
     ) {
         Text(
             text = text,
-            style = if (isSelected) selectedTextStyle else textStyle,
+            style = textStyle,
             color = Wellness.colors.text,
         )
     }

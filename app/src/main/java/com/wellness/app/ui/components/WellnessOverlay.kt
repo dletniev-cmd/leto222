@@ -288,11 +288,17 @@ fun RoundedSlideOverlay(
                 }
             }
             .graphicsLayer {
-                val p = dismissProgress.value
+                // Spring physics can briefly overshoot to negative values
+                // when the user flings the overlay closed and the spring
+                // settles back through zero — RoundedCornerShape rejects
+                // negative corner sizes with an IllegalArgumentException,
+                // so clamp `p` (and the resulting radius) to >= 0 before
+                // feeding them into translation/shape.
+                val p = dismissProgress.value.coerceAtLeast(0f)
                 translationX = p * size.width
                 // Left corners grow as the overlay moves out (matches device curve);
                 // right corners stay 0 since the overlay is at-or-past the right edge.
-                val leftRadiusPx = p * cornerRadiusPx
+                val leftRadiusPx = (p * cornerRadiusPx).coerceAtLeast(0f)
                 shape = RoundedCornerShape(
                     topStart = leftRadiusPx,
                     topEnd = 0f,

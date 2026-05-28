@@ -1,9 +1,10 @@
 package com.wellness.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
@@ -12,16 +13,25 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.wellness.app.ui.theme.Wellness
 
 /**
- * Pill-shaped toggle in the spirit of Telegram / iOS settings. Track colour
- * animates between muted-grey (off) and the current accent (on); thumb glides
- * with a soft spring.
+ * Pill-shaped toggle in the spirit of Telegram / iOS settings.
+ *
+ *   * Track colour fades through accent (tween 220 ms) — no abrupt
+ *     swap on tap.
+ *   * Thumb glides with a soft underdamped spring so it visibly
+ *     *slides* and gently overshoots at the end of travel.
+ *   * The thumb briefly elongates in the direction of motion on every
+ *     toggle (scaleX 1 → 1.12 → 1) so it reads as physical, like the
+ *     iOS system switch.
  */
 @Composable
 fun AccentSwitch(
@@ -37,14 +47,25 @@ fun AccentSwitch(
     val trackOn = Wellness.colors.accent
     val trackColor by animateColorAsState(
         if (checked) trackOn else trackOff,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        animationSpec = tween(durationMillis = 220),
         label = "switchtrack",
     )
     val offsetX by animateDpAsState(
         if (checked) width - thumbSize - padding else padding,
-        animationSpec = spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow),
+        // Underdamped spring with low stiffness — gives a clear sliding
+        // motion (~200 ms) with a tiny overshoot at the end.
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = 240f),
         label = "switchthumb",
     )
+    // Per-toggle "squish" pulse: snapTo(1) then spring-back to 0.
+    val pulse = remember { Animatable(0f) }
+    LaunchedEffect(checked) {
+        pulse.snapTo(1f)
+        pulse.animateTo(
+            targetValue = 0f,
+            animationSpec = spring(dampingRatio = 0.55f, stiffness = 220f),
+        )
+    }
     Box(
         modifier
             .width(width)
@@ -56,6 +77,11 @@ fun AccentSwitch(
             Modifier
                 .offset(x = offsetX, y = padding)
                 .size(thumbSize)
+                .graphicsLayer {
+                    val s = 1f + pulse.value * 0.12f
+                    scaleX = s
+                    scaleY = 2f - s
+                }
                 .background(Color.White, RoundedCornerShape(999.dp)),
         )
     }

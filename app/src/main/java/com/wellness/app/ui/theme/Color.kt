@@ -62,26 +62,46 @@ object WellnessColors {
  * pleasantly on both light and dark backgrounds.
  */
 val AccentPalette: List<Color> = listOf(
-    // Row 1: lilac → cyan → mint
-    Color(0xFFC28BFF), // lavender
-    Color(0xFF9889FB), // soft violet
-    Color(0xFF6E86F2), // periwinkle
-    Color(0xFF4EBEFF), // sky
-    Color(0xFF3FD5C5), // aqua teal
-    Color(0xFF5BD89A), // mint
-    // Row 2: lime → warm
+    // Row 1 — vivid warm / sun / earth
+    Color(0xFFFF453A), // ruby red
+    Color(0xFFFF6F61), // coral
+    Color(0xFFFF9F0A), // tangerine
+    Color(0xFFFFC940), // honey
+    Color(0xFFEFD075), // sand
+    Color(0xFFA9805A), // mocha
+    // Row 2 — fresh green / cool teal / sky
     Color(0xFFB7DD5C), // lime
-    Color(0xFFFFD24A), // sunny yellow
-    Color(0xFFFFB347), // amber
-    Color(0xFFFF8E63), // peach
-    Color(0xFFFF7568), // coral
-    Color(0xFFF26280), // berry
-    // Row 3: pink → neutrals
-    Color(0xFFFF6FAA), // pink
-    Color(0xFFE37CD0), // magenta
-    Color(0xFFC58FE6), // rose lilac
-    Color(0xFF8FA0B3), // slate
-    Color(0xFFA89B7F), // sand
-    Color(0xFFB8BCC4), // soft graphite
+    Color(0xFF34C759), // grass green
+    Color(0xFF30D1B0), // mint
+    Color(0xFF5AC8FA), // sky
+    Color(0xFF0A84FF), // ocean blue
+    Color(0xFF5E5CE6), // indigo
+    // Row 3 — purple / pink / berry / graphite
+    Color(0xFFAF52DE), // violet
+    Color(0xFFD583FF), // lavender
+    Color(0xFFFF6FAA), // bubblegum
+    Color(0xFFFF2D55), // rose
+    Color(0xFF8E8E93), // graphite
+    Color(0xFFB8BCC4), // mist grey
+)
 
+/**
+ * Accent picker shown on the *Appearance → Theme* screen. This is the
+ * one swatch that tints the entire app (buttons, switches, ring "fill"
+ * colour), so we keep the list short and very saturated — vibrant iOS
+ * system tints. Habit / task colours get their own broader palette
+ * above so the picker on AddHabit stays rich while the theme picker
+ * stays focused.
+ */
+val ThemePalette: List<Color> = listOf(
+    Color(0xFF9EE493), // signature lime (default)
+    Color(0xFF34C759), // green
+    Color(0xFF30D1B0), // mint
+    Color(0xFF5AC8FA), // sky
+    Color(0xFF0A84FF), // blue
+    Color(0xFF5E5CE6), // indigo
+    Color(0xFFAF52DE), // violet
+    Color(0xFFFF2D55), // rose
+    Color(0xFFFF9F0A), // orange
+    Color(0xFFFFCC00), // sunny
 )

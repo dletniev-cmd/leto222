@@ -156,7 +156,7 @@ private fun ColorDot(color: Color, selected: Boolean, modifier: Modifier = Modif
     // noticeably down to ~54% so a clearly visible gap opens up between
     // the disc and the stroked ring around it.
     val innerFraction by animateFloatAsState(
-        targetValue = if (selected) 0.54f else 0.84f,
+        targetValue = if (selected) 0.64f else 0.82f,
         animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
         label = "colorinner",
     )
@@ -177,10 +177,11 @@ private fun ColorDot(color: Color, selected: Boolean, modifier: Modifier = Modif
                 if (ringAlpha > 0f) {
                     val sw = 2.dp.toPx()
                     // Selection ring sits at the unselected-disc footprint
-                    // (~84% of the slot) — when a dot is picked, the disc
-                    // shrinks to 54% and the ring stays large, opening a
-                    // wide, clearly visible gap between them.
-                    val ringRadius = (this.size.minDimension * 0.84f - sw) / 2f
+                    // (~82% of the slot). When a dot is picked, the disc
+                    // shrinks to ~64% and the ring stays large — small
+                    // visible gap between the disc and the ring, like
+                    // iOS / Telegram colour pickers.
+                    val ringRadius = (this.size.minDimension * 0.82f - sw) / 2f
                     drawCircle(
                         color = color.copy(alpha = ringAlpha),
                         radius = ringRadius,

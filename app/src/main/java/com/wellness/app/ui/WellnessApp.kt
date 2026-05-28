@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import com.wellness.app.ui.components.Navbar
 import com.wellness.app.ui.components.NoFeedbackButton
 import com.wellness.app.ui.components.OverlayHost
-import com.wellness.app.ui.components.CrashLogDialog
 import com.wellness.app.ui.components.RoundedSlideOverlay
 import com.wellness.app.ui.components.rememberParallaxProgress
 import com.wellness.app.ui.icons.SolarIcon
@@ -47,6 +46,7 @@ import com.wellness.app.ui.screens.BindingsScreen
 import com.wellness.app.ui.screens.EditProfileScreen
 import com.wellness.app.ui.screens.GoalsScreen
 import com.wellness.app.ui.screens.HomeScreen
+import com.wellness.app.ui.screens.LogsScreen
 import com.wellness.app.ui.screens.NotificationsScreen
 import com.wellness.app.ui.screens.NutritionScreen
 import com.wellness.app.ui.screens.PlanScreen
@@ -73,6 +73,7 @@ sealed interface AddOverlay {
     data object Notifications : AddOverlay
     data object Bindings : AddOverlay
     data object Tiwi : AddOverlay
+    data object Logs : AddOverlay
 }
 
 @Composable
@@ -135,6 +136,7 @@ fun WellnessApp() {
                             onNotifications = { overlay = AddOverlay.Notifications },
                             onBindings = { overlay = AddOverlay.Bindings },
                             onTiwi = { overlay = AddOverlay.Tiwi },
+                            onLogs = { overlay = AddOverlay.Logs },
                         )
                     }
                 }
@@ -183,16 +185,18 @@ fun WellnessApp() {
                             AddOverlay.Notifications -> NotificationsScreen(onBack = animatedBack)
                             AddOverlay.Bindings -> BindingsScreen(onBack = animatedBack)
                             AddOverlay.Tiwi -> TiwiPlaceholder(onBack = animatedBack)
+                            AddOverlay.Logs -> LogsScreen(onBack = animatedBack)
                         }
                     }
                 }
             }
         }
 
-        // Surfaces last-session's uncaught exception (if any) with one-tap
-        // copy-to-clipboard. Rendered last in the Box so the dialog window
-        // sits on top of every overlay / tab content.
-        CrashLogDialog()
+        // Crash reports are written to disk by CrashReporter on uncaught
+        // exception and surfaced passively via Profile → Другое → Логи.
+        // The previous launch-time dialog interrupted the cold-start flow
+        // after every crash and looked alarming — the new screen lets the
+        // user copy logs on demand without blocking the UI.
     }
 }
 

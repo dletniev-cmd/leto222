@@ -45,6 +45,7 @@ fun ProfileScreen(
     onNotifications: () -> Unit = {},
     onBindings: () -> Unit = {},
     onTiwi: () -> Unit = {},
+    onLogs: () -> Unit = {},
 ) {
     val state = LocalAppState.current
     ScreenScaffold(topPadding = 0.dp) {
@@ -201,6 +202,32 @@ fun ProfileScreen(
                 iconTile = WellnessColors.TilePink,
                 title = "Тифи",
                 onClick = onTiwi,
+            )
+        }
+
+        // "Другое" — secondary actions that don't belong in the main
+        // settings list. Currently only hosts the crash-log viewer that
+        // replaced the launch-time dialog.
+        Box(
+            Modifier
+                .screenHPad()
+                .padding(start = 0.dp, top = 22.dp, bottom = 6.dp),
+        ) {
+            Text(
+                "ДРУГОЕ",
+                color = Wellness.colors.muted,
+                style = Wellness.typography.labelSmall,
+            )
+        }
+        SettingsCard(
+            modifier = Modifier.screenHPad(),
+            contentPadding = PaddingValues(vertical = 4.dp),
+        ) {
+            SettingsRow(
+                icon = "document-text-outline",
+                iconTile = WellnessColors.TileBlue,
+                title = "Логи",
+                onClick = onLogs,
             )
         }
     }
