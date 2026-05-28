@@ -62,27 +62,28 @@ object WellnessColors {
  * pleasantly on both light and dark backgrounds.
  */
 val AccentPalette: List<Color> = listOf(
-    // Row 1 — warm: red → coral → tangerine → honey → lime → fresh green
-    Color(0xFFFF453A), // ruby red
-    Color(0xFFFF6A5C), // coral
-    Color(0xFFFF8A3D), // tangerine
-    Color(0xFFFFB300), // honey
-    Color(0xFFC7E455), // lime
-    Color(0xFF49D962), // fresh green
-    // Row 2 — cool: emerald → mint → teal → sky → ocean → indigo
-    Color(0xFF1FC993), // emerald
-    Color(0xFF34D1B0), // mint
-    Color(0xFF1FBFD1), // teal
-    Color(0xFF5AC8FA), // sky
-    Color(0xFF2E86F1), // ocean
-    Color(0xFF5A6CF8), // indigo
-    // Row 3 — purple/pink: violet → orchid → magenta → bubblegum → rose → punch
-    Color(0xFF8B5CF6), // violet
-    Color(0xFFB061EE), // orchid
-    Color(0xFFE163E0), // magenta
-    Color(0xFFEF5DA8), // bubblegum
-    Color(0xFFFF6F9C), // rose
-    Color(0xFFFF3B6B), // punch
+    // Reference palette pulled directly from the user's reference
+    // Android build (wellness-android-fixed-13.zip) — pleasant,
+    // saturated but not glaring. Three smooth hue rows of six: violet
+    // → blue → cyan, teal → green → lime, yellow → orange → pink/rose.
+    Color(0xFFB084F5), // lavender purple
+    Color(0xFF8E7CF0), // violet
+    Color(0xFF6E86F2), // periwinkle
+    Color(0xFF5AA7FF), // blue
+    Color(0xFF4EC4E8), // sky cyan
+    Color(0xFF45CBC5), // teal cyan
+    Color(0xFF4ABFA0), // teal green
+    Color(0xFF7CD992), // mint
+    Color(0xFF66CF6E), // green
+    Color(0xFFB7D858), // lime
+    Color(0xFFEFCF4A), // yellow
+    Color(0xFFFFB347), // amber
+    Color(0xFFFF8C5A), // orange
+    Color(0xFFF77D6D), // coral
+    Color(0xFFF06262), // red
+    Color(0xFFFF6B9D), // pink
+    Color(0xFFE57AC9), // magenta
+    Color(0xFFD08CE2), // rose lilac
 )
 
 /**
@@ -92,26 +93,4 @@ val AccentPalette: List<Color> = listOf(
  * [AccentPalette] for visual consistency, but tuned slightly brighter
  * so they read as "theme tints" on white. No greys / browns.
  */
-val ThemePalette: List<Color> = listOf(
-    // Row 1 — warm
-    Color(0xFFFF453A), // ruby red
-    Color(0xFFFF6A5C), // coral
-    Color(0xFFFF8A3D), // tangerine
-    Color(0xFFFFB300), // honey
-    Color(0xFFC7E455), // lime
-    Color(0xFF49D962), // fresh green
-    // Row 2 — cool
-    Color(0xFF1FC993), // emerald
-    Color(0xFF34D1B0), // mint
-    Color(0xFF1FBFD1), // teal
-    Color(0xFF5AC8FA), // sky
-    Color(0xFF2E86F1), // ocean
-    Color(0xFF5A6CF8), // indigo
-    // Row 3 — purple / pink
-    Color(0xFF8B5CF6), // violet
-    Color(0xFFB061EE), // orchid
-    Color(0xFFE163E0), // magenta
-    Color(0xFFEF5DA8), // bubblegum
-    Color(0xFFFF6F9C), // rose
-    Color(0xFFFF3B6B), // punch
-)
+val ThemePalette: List<Color> = AccentPalette

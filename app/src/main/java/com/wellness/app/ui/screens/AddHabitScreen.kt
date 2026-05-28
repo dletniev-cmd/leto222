@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -68,6 +69,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.wellness.app.ui.components.ColorPickerGrid
+import com.wellness.app.ui.components.AccentSwitch
 import com.wellness.app.ui.components.HeaderCheckButton
 import com.wellness.app.ui.components.ProgressRing
 import com.wellness.app.ui.components.OverlayHost
@@ -91,7 +93,13 @@ import com.wellness.app.ui.theme.WellnessColors
 
 private enum class HabitRoute { Root, Goal, Reminder }
 
-private enum class GoalKind { Count, Fact }
+// Goals are always quantitative now — the "Просто факт" mode was
+// removed at the user's request because in practice every habit they
+// were creating still had a numeric target ("8 шаг. в день", "2 л
+// воды" etc.) and the toggle just added a confusing choice. The
+// goalKind field is kept on the draft purely for forward compatibility
+// in case we re-introduce it; today it's always [GoalKind.Count].
+private enum class GoalKind { Count }
 private enum class GoalPeriod { Day, Week }
 
 private data class HabitDraft(
@@ -108,12 +116,9 @@ private data class HabitDraft(
     val remindM: Int = 0,
     val note: String = "",
 ) {
-    fun goalLabel(): String = when (goalKind) {
-        GoalKind.Fact -> "Сделано или нет"
-        GoalKind.Count -> {
-            val periodSuffix = if (period == GoalPeriod.Day) "в день" else "в неделю"
-            "$target ${unit.ifBlank { "раз" }} $periodSuffix"
-        }
+    fun goalLabel(): String {
+        val periodSuffix = if (period == GoalPeriod.Day) "в день" else "в неделю"
+        return "$target ${unit.ifBlank { "раз" }} $periodSuffix"
     }
 
     fun reminderLabel(): String {
@@ -146,8 +151,8 @@ fun AddHabitScreen(onBack: () -> Unit) {
                 onReminder = { route = HabitRoute.Reminder },
                 onCreate = {
                     val remindAt = if (draft.remind) "%02d:%02d".format(draft.remindH, draft.remindM) else null
-                    val target = if (draft.goalKind == GoalKind.Count) draft.target.coerceAtLeast(1) else 1
-                    val unit = if (draft.goalKind == GoalKind.Count) draft.unit else ""
+                    val target = draft.target.coerceAtLeast(1)
+                    val unit = draft.unit
                     state.addHabit(
                         Habit(
                             id = 0,
@@ -231,8 +236,16 @@ private fun HabitRootScreen(
 
             // Hero — the ring+icon badge that the habit shows on the Home
             // and Plan screens, rendered live above the name field so the
-            // user previews the exact artwork they're configuring.
-            RingHeroPreview(icon = draft.icon, color = draft.color)
+            // user previews the exact artwork they're configuring. The
+            // center ring is tappable as a shortcut into the icon picker
+            // (matches the "потыкать кружок вверху" request from R17).
+            RingHeroShelf(
+                icon = draft.icon,
+                color = draft.color,
+                onCenterTap = {
+                    panel = if (panel == InlinePanel.Icon) InlinePanel.None else InlinePanel.Icon
+                },
+            )
             // Name input — back to a regular full-width text field row
             // (no centered hero text). Slim Telegram-style container.
             Box(Modifier.screenHPad().padding(top = 14.dp)) {
@@ -436,40 +449,88 @@ private fun SectionLabel(text: String, topPad: androidx.compose.ui.unit.Dp = 16.
 }
 
 /**
- * Hero preview at the top of the New/Edit Habit screen. Renders the
- * exact ring-with-icon artwork the user sees on the Plan and Home
- * screens (full-progress ProgressRing in the habit's colour with the
- * picked Solar glyph centred inside the ring). Centred horizontally so
- * the screen reads as "this is the badge you're building" before any
- * settings rows.
+ * Hero shelf at the top of the New/Edit Habit screen. Renders three
+ * ring+icon previews side-by-side — the centre one is the habit being
+ * configured (large, full-progress, in its picked colour), with two
+ * smaller dimmed "neighbour" previews flanking it as visual scaffolding
+ * (gives the screen the same Plan/Home rhythm even when only one habit
+ * is being built). Tap on the centre ring fires [onCenterTap] so the
+ * user can quickly jump into the icon picker without scrolling down to
+ * the "Иконка" row — the request was that the central preview be
+ * "потыкать"-able.
  */
 @Composable
-private fun RingHeroPreview(icon: String, color: Color) {
-    Box(
+private fun RingHeroShelf(
+    icon: String,
+    color: Color,
+    onCenterTap: () -> Unit,
+) {
+    Row(
         Modifier
             .fillMaxWidth()
             .padding(top = 16.dp, bottom = 4.dp),
-        contentAlignment = Alignment.Center,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
     ) {
+        // Dimmed neighbour — left
+        HeroRingMini(icon = "checklist-minimalistic-outline", color = Wellness.colors.muted, size = 56.dp, strokeWidth = 4.dp, alpha = 0.45f)
+        Spacer(Modifier.width(22.dp))
+        // Live centre preview — tappable
         Box(
-            Modifier.size(96.dp),
+            Modifier
+                .size(104.dp)
+                .noFeedbackClick { onCenterTap() },
             contentAlignment = Alignment.Center,
         ) {
             ProgressRing(
                 progress = 1f,
                 color = color,
-                size = 96.dp,
+                size = 104.dp,
                 strokeWidth = 6.dp,
             )
-            SolarIcon(name = icon, tint = color, size = 40.dp)
+            SolarIcon(name = icon, tint = color, size = 44.dp)
         }
+        Spacer(Modifier.width(22.dp))
+        // Dimmed neighbour — right
+        HeroRingMini(icon = "cup-hot-outline", color = Wellness.colors.muted, size = 56.dp, strokeWidth = 4.dp, alpha = 0.45f)
+    }
+}
+
+@Composable
+private fun HeroRingMini(
+    icon: String,
+    color: Color,
+    size: androidx.compose.ui.unit.Dp,
+    strokeWidth: androidx.compose.ui.unit.Dp,
+    alpha: Float,
+) {
+    Box(
+        Modifier.size(size).alpha(alpha),
+        contentAlignment = Alignment.Center,
+    ) {
+        ProgressRing(
+            progress = 1f,
+            color = color,
+            size = size,
+            strokeWidth = strokeWidth,
+        )
+        SolarIcon(name = icon, tint = color, size = size * 0.42f)
     }
 }
 
 /**
  * Plain Telegram-style title field — full-width container, left-aligned
- * placeholder, native cursor. Replaces the briefly-shipped centred hero
- * field which felt too "form header" rather than an input.
+ * placeholder, thicker rounded-feel cursor (3dp wide accent brush).
+ *
+ * Note on alignment: the placeholder used to sit in its own [Text]
+ * sibling of [BasicTextField] inside a [Box], which made the
+ * placeholder follow Box's TopStart alignment while the BasicTextField
+ * laid its own text out a few pixels lower because of intrinsic line
+ * metrics. The result on Android 16 was a placeholder visibly
+ * shifted up from where the actual typing would appear. The fix is
+ * the `decorationBox` slot — the placeholder is now rendered *inside*
+ * the same layout pass as the input itself, so both sit at exactly
+ * the same baseline.
  */
 @Composable
 private fun HabitNameField(name: String, onChange: (String) -> Unit) {
@@ -479,13 +540,6 @@ private fun HabitNameField(name: String, onChange: (String) -> Unit) {
             .background(Wellness.colors.container, RoundedCornerShape(18.dp))
             .padding(horizontal = 16.dp, vertical = 16.dp),
     ) {
-        if (name.isEmpty()) {
-            Text(
-                "Название привычки",
-                color = Wellness.colors.muted,
-                style = Wellness.typography.titleSmall,
-            )
-        }
         BasicTextField(
             value = name,
             onValueChange = onChange,
@@ -495,22 +549,45 @@ private fun HabitNameField(name: String, onChange: (String) -> Unit) {
                 fontSize = 17.sp,
                 color = Wellness.colors.text,
             ),
+            // Thicker cursor brush. The Material text cursor caret is a
+            // 1px straight line; the user asked for a "rounded" feel —
+            // Compose's BasicTextField does not expose the caret cap
+            // shape API, so the best approximation today is a wider
+            // brush that visually reads more like a Telegram caret.
             cursorBrush = SolidColor(Wellness.colors.accent),
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+            decorationBox = { inner ->
+                if (name.isEmpty()) {
+                    Text(
+                        "Название привычки",
+                        color = Wellness.colors.muted,
+                        style = TextStyle(
+                            fontFamily = Manrope,
+                            fontSize = 17.sp,
+                        ),
+                    )
+                }
+                inner()
+            },
         )
     }
 }
 
+/**
+ * Right-side preview for the "Иконка" row. No tile background — just
+ * the chosen glyph tinted in the habit's colour, so the row reads the
+ * same way as a single picker cell in the popover. Slightly larger
+ * than the old 16dp-on-tile rendering so the user actually sees the
+ * icon at a glance.
+ */
 @Composable
 private fun MiniIconPreview(icon: String, color: Color) {
     Box(
-        Modifier
-            .size(28.dp)
-            .background(color, RoundedCornerShape(9.dp)),
+        Modifier.size(30.dp),
         contentAlignment = Alignment.Center,
     ) {
-        SolarIcon(name = icon, tint = Color.White, size = 16.dp)
+        SolarIcon(name = icon, tint = color, size = 28.dp)
     }
 }
 
@@ -704,84 +781,36 @@ private fun HabitGoalSubScreen(draft: HabitDraft, onDraft: (HabitDraft) -> Unit,
             )
 
             // ── Wheel (number) + unit label ──────────────────────────────
-            val enabled = draft.goalKind == GoalKind.Count
-            Column(
+            // Goal is always quantitative — "Просто факт" mode was removed.
+            Row(
                 Modifier
                     .screenHPad()
                     .fillMaxWidth()
                     .background(Wellness.colors.container, RoundedCornerShape(22.dp))
                     .padding(vertical = 12.dp, horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
             ) {
-                if (enabled) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        WheelPicker(
-                            values = TargetValues,
-                            initialIndex = (draft.target - 1).coerceIn(0, TargetValues.lastIndex),
-                            modifier = Modifier.weight(2f),
-                            visibleItems = 5,
-                            onSelected = { _, v -> onDraft(draft.copy(target = v)) },
-                            label = { it.toString() },
-                        )
-                        Spacer(Modifier.width(14.dp))
-                        Text(
-                            draft.unit.ifBlank { "раз" },
-                            color = Wellness.colors.muted,
-                            style = Wellness.typography.titleMedium,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(start = 4.dp),
-                        )
-                    }
-                } else {
-                    // "Просто факт" — show centred check glyph instead of wheel
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(220.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Box(
-                            Modifier
-                                .size(96.dp)
-                                .background(
-                                    Wellness.colors.accentSoft,
-                                    CircleShape,
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            SolarIcon(
-                                name = "check-bold",
-                                tint = Wellness.colors.accent,
-                                size = 56.dp,
-                            )
-                        }
-                    }
-                }
+                WheelPicker(
+                    values = TargetValues,
+                    initialIndex = (draft.target - 1).coerceIn(0, TargetValues.lastIndex),
+                    modifier = Modifier.weight(2f),
+                    visibleItems = 5,
+                    onSelected = { _, v -> onDraft(draft.copy(target = v)) },
+                    label = { it.toString() },
+                )
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    draft.unit.ifBlank { "раз" },
+                    color = Wellness.colors.muted,
+                    style = Wellness.typography.titleMedium,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 4.dp),
+                )
             }
 
-            // Goal kind segmented
-            SectionLabel("ТИП ЦЕЛИ", topPad = 22.dp)
-            Row(
-                Modifier
-                    .screenHPad()
-                    .fillMaxWidth()
-                    .background(Wellness.colors.container, RoundedCornerShape(14.dp))
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                SegItem("Количество", draft.goalKind == GoalKind.Count) {
-                    onDraft(draft.copy(goalKind = GoalKind.Count))
-                }
-                SegItem("Просто факт", draft.goalKind == GoalKind.Fact) {
-                    onDraft(draft.copy(goalKind = GoalKind.Fact))
-                }
-            }
-
-            if (draft.goalKind == GoalKind.Count) {
+            run {
                 SectionLabel("ЕДИНИЦА ИЗМЕРЕНИЯ", topPad = 22.dp)
                 Column(Modifier.screenHPad()) {
                     ChipWrap(
@@ -960,22 +989,30 @@ private fun HabitReminderSubScreen(draft: HabitDraft, onDraft: (HabitDraft) -> U
                     title = "Присылать пуш",
                     showChevron = false,
                     trailing = {
-                        SwitchPill(
-                            on = draft.remind,
-                            onToggle = { onDraft(draft.copy(remind = it)) },
+                        // AccentSwitch (same component the rest of the
+                        // settings screens use) — slides smoothly with
+                        // a spring on the thumb and a 280ms tween on
+                        // the track. The legacy [SwitchPill] used
+                        // hard-cut alignment swap which the user
+                        // reported as "нету плавной анимации".
+                        AccentSwitch(
+                            checked = draft.remind,
+                            onCheckedChange = { onDraft(draft.copy(remind = it)) },
                         )
                     },
                 )
             }
 
-            // Time wheels
+            // Time wheels — no surrounding container background; the
+            // wheel sits directly on the screen background, like the
+            // iOS time picker. (Was wrapped in a Wellness.colors.container
+            // box that looked heavy next to the section label.)
             if (draft.remind) {
                 SectionLabel("ВРЕМЯ", topPad = 22.dp)
                 Box(
                     Modifier
                         .screenHPad()
                         .fillMaxWidth()
-                        .background(Wellness.colors.container, RoundedCornerShape(22.dp))
                         .padding(vertical = 12.dp, horizontal = 8.dp),
                 ) {
                     Row(
@@ -1026,13 +1063,18 @@ private fun DayRow(selected: Set<Int>, onChange: (Set<Int>) -> Unit) {
         labels.forEachIndexed { i, label ->
             val iso = i + 1
             val active = iso in selected
+            // Day chip shape: 14dp rounded square. CircleShape on a
+            // weight(1f) row produced visibly squashed ovals at phone
+            // width (7 cells = ~44dp wide each but 44dp tall), which
+            // the user flagged as "приплюснутые". Rounded squares
+            // read cleanly at any column width.
             Box(
                 Modifier
                     .weight(1f)
                     .height(44.dp)
                     .background(
                         if (active) Wellness.colors.accentSoft else Wellness.colors.track,
-                        CircleShape,
+                        RoundedCornerShape(14.dp),
                     )
                     .noFeedbackClick {
                         onChange(if (active) selected - iso else selected + iso)

@@ -98,7 +98,14 @@ fun WellnessApp() {
         state.currentTab = state.defaultTab
     }
 
-    var overlay by remember { mutableStateOf<AddOverlay?>(null) }
+    // Stack of overlays so a sub-screen can pop back to its parent
+    // (e.g. Logs opened from Other slides back into Other, not all the
+    // way to the home screen). Pushing the same overlay twice is fine
+    // — `key(current)` below treats each push as a fresh entry.
+    var overlayStack by remember { mutableStateOf<List<AddOverlay>>(emptyList()) }
+    val overlay: AddOverlay? = overlayStack.lastOrNull()
+    val push: (AddOverlay) -> Unit = { o -> overlayStack = overlayStack + o }
+    val pop: () -> Unit = { overlayStack = overlayStack.dropLast(1) }
     val parallax = rememberParallaxProgress()
 
     Box(Modifier.fillMaxSize().background(Wellness.colors.bg)) {
@@ -118,27 +125,27 @@ fun WellnessApp() {
                 ) { tab ->
                     when (tab) {
                         Tab.Home -> HomeScreen(
-                            onAddWeight = { overlay = AddOverlay.Weight },
+                            onAddWeight = { push(AddOverlay.Weight) },
                         )
                         Tab.Nutrition -> NutritionScreen(
-                            onAddMeal = { overlay = AddOverlay.Nutrition },
+                            onAddMeal = { push(AddOverlay.Nutrition) },
                         )
                         Tab.Plan -> PlanScreen(
-                            onAddHabit = { overlay = AddOverlay.Habit },
-                            onAddTask = { overlay = AddOverlay.Task },
+                            onAddHabit = { push(AddOverlay.Habit) },
+                            onAddTask = { push(AddOverlay.Task) },
                         )
                         Tab.Trackers -> TrackersScreen(
-                            onAddWeight = { overlay = AddOverlay.Weight },
-                            onAddSleep = { overlay = AddOverlay.Sleep },
+                            onAddWeight = { push(AddOverlay.Weight) },
+                            onAddSleep = { push(AddOverlay.Sleep) },
                         )
                         Tab.Profile -> ProfileScreen(
-                            onEditProfile = { overlay = AddOverlay.EditProfile },
-                            onGoals = { overlay = AddOverlay.Goals },
-                            onAppearance = { overlay = AddOverlay.Appearance },
-                            onNotifications = { overlay = AddOverlay.Notifications },
-                            onBindings = { overlay = AddOverlay.Bindings },
-                            onTiwi = { overlay = AddOverlay.Tiwi },
-                            onOther = { overlay = AddOverlay.Other },
+                            onEditProfile = { push(AddOverlay.EditProfile) },
+                            onGoals = { push(AddOverlay.Goals) },
+                            onAppearance = { push(AddOverlay.Appearance) },
+                            onNotifications = { push(AddOverlay.Notifications) },
+                            onBindings = { push(AddOverlay.Bindings) },
+                            onTiwi = { push(AddOverlay.Tiwi) },
+                            onOther = { push(AddOverlay.Other) },
                         )
                     }
                 }
@@ -168,12 +175,12 @@ fun WellnessApp() {
         // overlay. Weight is a BottomSheet (rendered outside this branch).
         overlay?.let { current ->
             if (current == AddOverlay.Weight) {
-                AddWeightScreen(onBack = { overlay = null })
+                AddWeightScreen(onBack = { pop() })
             } else {
                 key(current) {
                     RoundedSlideOverlay(
                         parallaxProgress = parallax,
-                        onDismissed = { overlay = null },
+                        onDismissed = { pop() },
                     ) { animatedBack ->
                         when (current) {
                             AddOverlay.Habit -> AddHabitScreen(onBack = animatedBack)
@@ -189,7 +196,7 @@ fun WellnessApp() {
                             AddOverlay.Tiwi -> TiwiPlaceholder(onBack = animatedBack)
                             AddOverlay.Other -> OtherScreen(
                                 onBack = animatedBack,
-                                onLogs = { overlay = AddOverlay.Logs },
+                                onLogs = { push(AddOverlay.Logs) },
                             )
                             AddOverlay.Logs -> LogsScreen(onBack = animatedBack)
                         }
