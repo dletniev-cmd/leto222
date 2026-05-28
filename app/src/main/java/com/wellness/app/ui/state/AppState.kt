@@ -308,8 +308,16 @@ class AppState(private val bindingStore: TelegramBindingStore? = null) {
     }
 
     // Weight
+    //
+    // `weightStart` is the user's weight when they first set the current
+    // goal — the burn-down progress on the profile screen is `(start -
+    // current) / (start - goal)`. We seed it slightly higher than the
+    // initial `weight` so the bar lands at a non-zero, non-100 % value
+    // on a fresh install (matches the prototype's example) and so the
+    // user can see the bar respond as soon as they log a weigh-in.
     var weight by mutableStateOf(78.4f)
     var weightGoal by mutableStateOf(75.0f)
+    var weightStart by mutableStateOf(80.0f)
 
     // Sleep last 7 days (relative height 0..1)
     val sleep: List<SleepDay> = listOf(

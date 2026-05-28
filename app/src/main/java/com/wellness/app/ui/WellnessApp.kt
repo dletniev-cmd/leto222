@@ -56,6 +56,7 @@ import com.wellness.app.ui.screens.OtherScreen
 import com.wellness.app.ui.screens.NutritionScreen
 import com.wellness.app.ui.screens.PlanScreen
 import com.wellness.app.ui.screens.ProfileScreen
+import com.wellness.app.ui.screens.ProgressGoalsScreen
 import com.wellness.app.ui.screens.TrackersScreen
 import com.wellness.app.ui.state.LocalAppState
 import com.wellness.app.ui.state.Tab
@@ -80,6 +81,7 @@ sealed interface AddOverlay {
     data object Tiwi : AddOverlay
     data object Other : AddOverlay
     data object Logs : AddOverlay
+    data object ProgressGoals : AddOverlay
 }
 
 @Composable
@@ -211,6 +213,10 @@ fun WellnessApp() {
                             onBindings = { push(AddOverlay.Bindings) },
                             onTiwi = { push(AddOverlay.Tiwi) },
                             onOther = { push(AddOverlay.Other) },
+                            onProgressDetail = { push(AddOverlay.ProgressGoals) },
+                            onQuickScan = { push(AddOverlay.Tiwi) },
+                            onQuickWeight = { push(AddOverlay.Weight) },
+                            onQuickAchievements = { push(AddOverlay.Tiwi) },
                         )
                     }
                 }
@@ -328,6 +334,7 @@ private fun OverlayContent(
         AddOverlay.Tiwi -> TiwiPlaceholder(onBack = animatedBack)
         AddOverlay.Other -> OtherScreen(onBack = animatedBack, onLogs = onPushLogs)
         AddOverlay.Logs -> LogsScreen(onBack = animatedBack)
+        AddOverlay.ProgressGoals -> ProgressGoalsScreen(onBack = animatedBack)
     }
 }
 

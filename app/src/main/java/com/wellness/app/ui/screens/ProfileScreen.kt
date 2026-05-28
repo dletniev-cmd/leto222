@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,24 +18,32 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.wellness.app.ui.components.GoalProgressBar
 import com.wellness.app.ui.components.NoFeedbackButton
 import com.wellness.app.ui.components.ScreenScaffold
 import com.wellness.app.ui.components.SettingsCard
 import com.wellness.app.ui.components.SettingsRow
 import com.wellness.app.ui.components.SettingsRowDivider
+import com.wellness.app.ui.components.noFeedbackClick
 import com.wellness.app.ui.components.screenHPad
 import com.wellness.app.ui.icons.SolarIcon
 import com.wellness.app.ui.state.LocalAppState
+import com.wellness.app.ui.state.calculateGoalProgress
 import com.wellness.app.ui.theme.Wellness
 import com.wellness.app.ui.theme.WellnessColors
 
+/**
+ * Profile screen. Recently rebuilt around the user-approved HTML
+ * prototype — the old four-up "Вес / Цель / Вода / Ккал" stat row was
+ * replaced with a thick weighted-goal progress bar plus three rounded
+ * quick-action buttons. The settings stack underneath stays untouched.
+ */
 @Composable
 fun ProfileScreen(
     onEditProfile: () -> Unit = {},
@@ -46,11 +53,17 @@ fun ProfileScreen(
     onBindings: () -> Unit = {},
     onTiwi: () -> Unit = {},
     onOther: () -> Unit = {},
+    onProgressDetail: () -> Unit = {},
+    onQuickScan: () -> Unit = {},
+    onQuickWeight: () -> Unit = {},
+    onQuickAchievements: () -> Unit = {},
 ) {
     val state = LocalAppState.current
+    val breakdown = calculateGoalProgress(state)
+    val percent = (breakdown.overall * 100f).toInt()
+
     ScreenScaffold(topPadding = 0.dp) {
-        // Pencil edit button anchored top-right with no surrounding plate —
-        // matches Telegram's minimal corner button.
+        // Pencil edit button anchored top-right with no surrounding plate.
         Box(
             Modifier
                 .fillMaxWidth()
@@ -64,12 +77,9 @@ fun ProfileScreen(
             }
         }
 
-        // Avatar. When a Telegram binding is in place we render the user's
-        // Telegram profile photo via Coil, falling back to the generic
-        // accent-tinted user glyph when the photo URL hasn't resolved yet
-        // (or the user has no profile photo). The fallback always paints
-        // first so the empty avatar slot never shows through during the
-        // network round-trip.
+        // Avatar. Falls back to the accent-tinted user glyph when no
+        // Telegram photo is bound — the fallback is painted first so the
+        // empty slot never shows through.
         val photoUrl = state.telegramUser?.photoUrl
         val context = LocalContext.current
         Box(Modifier.fillMaxWidth().padding(top = 6.dp), contentAlignment = Alignment.Center) {
@@ -95,21 +105,16 @@ fun ProfileScreen(
             }
         }
 
-        // Name + subtitle. We render `state.userName` directly — Telegram
-        // binding writes the TG display name into `userName` once on bind
-        // (see [AppState.bindTelegram]), and the profile editor mutates the
-        // same field. Reading a single source of truth keeps the header and
-        // the editor in sync regardless of whether the user edited the name
-        // manually after binding.
-        val displayName = state.userName
+        // Name + subtitle. `userName` is the single source of truth shared
+        // between Telegram bind, profile editor and this header.
         Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
             Text(
-                displayName,
+                state.userName,
                 color = Wellness.colors.text,
                 style = Wellness.typography.headlineLarge,
             )
         }
-        Box(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 16.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 14.dp), contentAlignment = Alignment.Center) {
             Text(
                 "${state.age} лет · ${state.gender.title}",
                 color = Wellness.colors.muted,
@@ -117,49 +122,87 @@ fun ProfileScreen(
             )
         }
 
-        // One unified stats container with thin vertical dividers between
-        // the four metrics. The previous four-card pill layout looked busy
-        // because of the coloured icon tiles; the bug report explicitly
-        // asked for "единый контейнер но с разделителями".
-        Row(
+        // ── Goal progress card ───────────────────────────────────────────
+        //
+        // Tapping anywhere on this card opens the detail screen. We
+        // wrap the entire card in `noFeedbackClick` rather than only
+        // the bar so the user has a generously sized hit target.
+        Box(
             Modifier
                 .fillMaxWidth()
                 .screenHPad()
                 .padding(bottom = 14.dp)
+                .clip(RoundedCornerShape(22.dp))
                 .background(Wellness.colors.container, RoundedCornerShape(22.dp))
-                .padding(vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .noFeedbackClick(onClick = onProgressDetail)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
-            QuickStat(
+            Column {
+                GoalProgressBar(progress = breakdown.overall, modifier = Modifier.fillMaxWidth())
+                Box(Modifier.height(10.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Цель достигнута на ",
+                        color = Wellness.colors.muted,
+                        style = Wellness.typography.bodyMedium,
+                    )
+                    Text(
+                        "$percent%",
+                        color = Wellness.colors.text,
+                        style = Wellness.typography.titleSmall,
+                    )
+                    Box(Modifier.weight(1f))
+                    Text(
+                        "подробнее",
+                        color = Wellness.colors.muted,
+                        style = Wellness.typography.bodySmall,
+                    )
+                    Box(Modifier.size(4.dp))
+                    SolarIcon(
+                        name = "alt-arrow-right-outline",
+                        tint = Wellness.colors.muted,
+                        size = 14.dp,
+                    )
+                }
+            }
+        }
+
+        // ── 3 quick action buttons ───────────────────────────────────────
+        //
+        // Placeholders for now — onClick handlers fire navigation hooks
+        // wired through WellnessApp so future screens (scanner, weigh-in,
+        // achievements) can drop in without touching ProfileScreen.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .screenHPad()
+                .padding(bottom = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            QuickAction(
                 modifier = Modifier.weight(1f),
+                icon = "scanner-outline",
+                label = "Сканер",
+                onClick = onQuickScan,
+            )
+            QuickAction(
+                modifier = Modifier.weight(1f),
+                icon = "scale-outline",
                 label = "Вес",
-                value = "%.1f".format(state.weight).replace('.', ','),
-                unit = "кг",
+                onClick = onQuickWeight,
             )
-            StatDivider()
-            QuickStat(
+            QuickAction(
                 modifier = Modifier.weight(1f),
-                label = "Цель",
-                value = "%.1f".format(state.weightGoal).replace('.', ','),
-                unit = "кг",
-            )
-            StatDivider()
-            QuickStat(
-                modifier = Modifier.weight(1f),
-                label = "Вода",
-                value = formatCompact(state.waterTarget),
-                unit = "мл",
-            )
-            StatDivider()
-            QuickStat(
-                modifier = Modifier.weight(1f),
-                label = "Ккал",
-                value = formatCompact(state.kcalTarget),
-                unit = "",
+                icon = "medal-star-outline",
+                label = "Награды",
+                onClick = onQuickAchievements,
             )
         }
 
-        // Settings container
+        // ── Settings list ────────────────────────────────────────────────
         SettingsCard(
             modifier = Modifier.screenHPad(),
             contentPadding = PaddingValues(vertical = 4.dp),
@@ -185,10 +228,6 @@ fun ProfileScreen(
                 onClick = onNotifications,
             )
             SettingsRowDivider()
-            // The bindings row is the entry point to the new Telegram-link
-            // flow. We surface the live binding state in the row's trailing
-            // value so users get an at-a-glance "Привязано/Не
-            // привязано" without opening the screen.
             SettingsRow(
                 icon = "link-round-outline",
                 iconTile = WellnessColors.TelegramBlue,
@@ -205,10 +244,6 @@ fun ProfileScreen(
             )
         }
 
-        // "Другое" is a single row that opens a sub-screen — keeps the
-        // main settings list short while hiding diagnostic items
-        // (currently just Логи) one tap deeper, like iOS Settings →
-        // General → Other.
         Box(Modifier.height(18.dp))
         SettingsCard(
             modifier = Modifier.screenHPad(),
@@ -224,63 +259,36 @@ fun ProfileScreen(
     }
 }
 
-/** Single metric inside the unified profile stats container. Value sits on
- *  top in title weight, label underneath in muted body. The optional unit
- *  is appended to the value with a thin space so the metric reads as one
- *  glyph cluster (e.g. "78,4 кг"). */
+/**
+ * Single rounded quick-action tile. Centred icon over a small label —
+ * matches the proto. Buttons are visually unified (same height /
+ * radius / background) so the row reads as a connected control strip
+ * rather than three disparate chips.
+ */
 @Composable
-private fun QuickStat(
+private fun QuickAction(
     modifier: Modifier = Modifier,
+    icon: String,
     label: String,
-    value: String,
-    unit: String,
+    onClick: () -> Unit,
 ) {
-    Column(
-        modifier = modifier.padding(vertical = 2.dp, horizontal = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                value,
-                color = Wellness.colors.text,
-                style = Wellness.typography.headlineLarge,
-                maxLines = 1,
-            )
-            if (unit.isNotEmpty()) {
-                Text(
-                    " $unit",
-                    color = Wellness.colors.muted,
-                    style = Wellness.typography.bodySmall,
-                    modifier = Modifier.padding(bottom = 4.dp),
-                )
-            }
-        }
-        Box(Modifier.height(2.dp))
-        Text(
-            label,
-            color = Wellness.colors.muted,
-            style = Wellness.typography.bodySmall,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-        )
-    }
-}
-
-/** Thin vertical hairline used between [QuickStat] columns. Inset top and
- *  bottom so it doesn't touch the container edges. */
-@Composable
-private fun StatDivider() {
     Box(
-        Modifier
-            .width(1.dp)
-            .height(36.dp)
-            .background(Wellness.colors.text.copy(alpha = 0.08f)),
-    )
-}
-
-/** Short numeric formatter — keeps four-digit values intact, drops trailing
- *  zeros from .0 decimals. */
-private fun formatCompact(value: Int): String {
-    if (value >= 10000) return (value / 1000).toString() + "к"
-    return value.toString()
+        modifier
+            .height(72.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(Wellness.colors.container, RoundedCornerShape(22.dp))
+            .noFeedbackClick(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            SolarIcon(name = icon, tint = Wellness.colors.accent, size = 24.dp)
+            Box(Modifier.height(4.dp))
+            Text(
+                label,
+                color = Wellness.colors.muted,
+                style = Wellness.typography.labelSmall,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
 }
