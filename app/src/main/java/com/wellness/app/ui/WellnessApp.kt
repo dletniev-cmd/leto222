@@ -1,9 +1,12 @@
 package com.wellness.app.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -155,11 +158,32 @@ fun WellnessApp() {
                 AnimatedContent(
                     targetState = state.currentTab,
                     transitionSpec = {
-                        // Snappy iOS-style cross-fade between tabs — fast
-                        // enough to feel responsive (no perceived lag) but
-                        // long enough that the swap reads as a soft dissolve
-                        // rather than a hard cut.
-                        fadeIn(tween(180)).togetherWith(fadeOut(tween(120)))
+                        // Horizontal slide-swap: the outgoing screen leaves
+                        // toward one edge and the incoming screen enters from
+                        // the opposite edge at the same time. Direction is
+                        // driven by the actual order of tabs in the navbar
+                        // (so reordering in настройки behaves correctly).
+                        val order = state.navbarOrder
+                        val fromIdx = order.indexOf(initialState).let { if (it < 0) 0 else it }
+                        val toIdx = order.indexOf(targetState).let { if (it < 0) 0 else it }
+                        val forward = toIdx >= fromIdx
+                        val dur = 260
+                        val ease = FastOutSlowInEasing
+                        if (forward) {
+                            (slideInHorizontally(tween(dur, easing = ease)) { it } +
+                                fadeIn(tween(dur)))
+                                .togetherWith(
+                                    slideOutHorizontally(tween(dur, easing = ease)) { -it } +
+                                        fadeOut(tween(dur))
+                                )
+                        } else {
+                            (slideInHorizontally(tween(dur, easing = ease)) { -it } +
+                                fadeIn(tween(dur)))
+                                .togetherWith(
+                                    slideOutHorizontally(tween(dur, easing = ease)) { it } +
+                                        fadeOut(tween(dur))
+                                )
+                        }
                     },
                     label = "screens",
                     modifier = Modifier.fillMaxSize(),

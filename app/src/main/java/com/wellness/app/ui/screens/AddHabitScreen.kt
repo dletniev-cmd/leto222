@@ -976,15 +976,15 @@ private fun HabitGoalSubScreen(draft: HabitDraft, onDraft: (HabitDraft) -> Unit,
                     .padding(top = 8.dp, bottom = 4.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                // Faint centre-row pill, sized to one wheel-row, that
-                // sits behind both wheels and unites them visually
-                // without re-introducing the boxed container.
+                // Accent-tinted centre-row pill, sized to one wheel-row,
+                // that sits behind both wheels and unites them visually.
+                // Low alpha so it never competes with the text.
                 Box(
                     Modifier
                         .height(wheelItemHeight + 4.dp)
                         .fillMaxWidth(0.86f)
                         .background(
-                            Wellness.colors.track.copy(alpha = 0.35f),
+                            Wellness.colors.accent.copy(alpha = 0.18f),
                             RoundedCornerShape(14.dp),
                         ),
                 )
