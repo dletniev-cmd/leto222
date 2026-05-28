@@ -472,13 +472,9 @@ private fun RingHeroShelf(
     centreTarget: Int,
     onCenterTap: () -> Unit,
 ) {
-    // Three-column hero shelf — neighbour preview · live preview ·
-    // neighbour preview. All three columns share the same fixed
-    // [HeroColumnHeight] frame and `Arrangement.Top` so the ring
-    // canvas never jumps vertically when the label below changes
-    // (the previous version centred each column, which made the
-    // ring twitch up/down every time a fixture rolled into a label
-    // with a slightly different ascent/descent).
+    // Side rings removed — single centre preview with name + count
+    // below, so the hero reads as a single big "habit tile" being
+    // configured rather than a row of three.
     Row(
         Modifier
             .fillMaxWidth()
@@ -487,33 +483,27 @@ private fun RingHeroShelf(
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.Center,
     ) {
-        NeighbourRing(seed = 0)
-        Spacer(Modifier.width(22.dp))
         Column(
             Modifier
-                .width(124.dp)
+                .width(160.dp)
                 .height(HeroColumnHeight),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Box(
                 Modifier
-                    .size(104.dp)
+                    .size(112.dp)
                     .noFeedbackClick { onCenterTap() },
                 contentAlignment = Alignment.Center,
             ) {
                 ProgressRing(
                     progress = 0.68f,
                     color = color,
-                    size = 104.dp,
-                    strokeWidth = 6.dp,
+                    size = 112.dp,
+                    strokeWidth = 7.dp,
                 )
-                SolarIcon(name = icon, tint = color, size = 44.dp)
+                SolarIcon(name = icon, tint = color, size = 48.dp)
             }
-            // Preview labels mirror the side rings so the centre also
-            // reads as a real habit tile (название + 68% прогресс).
-            // Placeholder "Привычка" surfaces while the name field is
-            // empty, then swaps to whatever the user types.
             Box(
                 Modifier.fillMaxWidth().height(36.dp),
                 contentAlignment = Alignment.TopCenter,
@@ -534,8 +524,6 @@ private fun RingHeroShelf(
                 }
             }
         }
-        Spacer(Modifier.width(22.dp))
-        NeighbourRing(seed = 1)
     }
 }
 

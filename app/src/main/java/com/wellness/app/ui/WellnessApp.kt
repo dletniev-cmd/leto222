@@ -140,7 +140,14 @@ fun WellnessApp() {
     // entry animation the user reported for Logs from Другое. The
     // dummy sink absorbs the mirror writes so nested entry/exit reads
     // exactly like a normal slide-in over the parent.
-    val dummyParallax = remember { mutableFloatStateOf(0f) }
+    // The top overlay at depth >= 2 drives THIS state instead of the
+    // host parallax. We also read it from the underlay Box so the
+    // screen underneath (e.g. Other under Logs) slides slightly to
+    // the left as the top overlay slides in from the right — the
+    // iOS-style parallax the rest of the app already does for the
+    // home pager via OverlayHost. Initial value is 1f (no shift) so
+    // there's no flicker before the first RSO write.
+    val underlayParallax = remember { mutableFloatStateOf(1f) }
 
     Box(Modifier.fillMaxSize().background(Wellness.colors.bg)) {
         OverlayHost(parallaxProgress = parallax) {
@@ -211,7 +218,20 @@ fun WellnessApp() {
         // child push/pop so the home tab never flashes through.
         underlay?.let { u ->
             if (u != AddOverlay.Weight) {
-                Box(Modifier.fillMaxSize().background(Wellness.colors.bg)) {
+                // Slide the underlay slightly left as the top overlay
+                // covers it (parallax matches the home-pager behaviour
+                // — 28% of width at fully-covered). underlayParallax is
+                // 1f when nothing is covering (no shift), 0f when the
+                // top overlay fully covers the screen (-28% shift).
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val p = underlayParallax.floatValue
+                            translationX = -(1f - p) * size.width * 0.28f
+                        }
+                        .background(Wellness.colors.bg)
+                ) {
                     OverlayContent(
                         current = u,
                         animatedBack = {},
@@ -233,7 +253,7 @@ fun WellnessApp() {
                 // and re-running the slide-in would look like the new
                 // top "appears" from the right one extra time.
                 val animateInTop = lastAction != "pop"
-                val topParallax = if (overlayStack.size >= 2) dummyParallax else parallax
+                val topParallax = if (overlayStack.size >= 2) underlayParallax else parallax
                 key(current, animateInTop) {
                     RoundedSlideOverlay(
                         parallaxProgress = topParallax,
