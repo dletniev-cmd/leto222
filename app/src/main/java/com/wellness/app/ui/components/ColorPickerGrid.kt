@@ -151,8 +151,11 @@ private fun ColorDot(color: Color, selected: Boolean, modifier: Modifier = Modif
     // tween for the inner disc and animate the ring's alpha/stroke colour
     // in tandem so the unselected → selected handoff fades rather than
     // pops, even when the finger is sliding fast across the grid.
+    // Smaller, breezier circles — unselected discs fill ~82% of the slot
+    // (leaving real spacing between adjacent dots), selected ones shrink
+    // further to ~62% so the stroked ring sits clearly around them.
     val innerFraction by animateFloatAsState(
-        targetValue = if (selected) 0.70f else 1f,
+        targetValue = if (selected) 0.62f else 0.82f,
         animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
         label = "colorinner",
     )
@@ -171,10 +174,15 @@ private fun ColorDot(color: Color, selected: Boolean, modifier: Modifier = Modif
             .aspectRatio(1f)
             .drawBehind {
                 if (ringAlpha > 0f) {
-                    val sw = 2.5.dp.toPx()
+                    val sw = 2.dp.toPx()
+                    // Match the new smaller disc footprint: the selection
+                    // ring hugs ~78% of the slot (just slightly larger than
+                    // the unselected disc) so it reads as "the ring grew
+                    // out of the disc" rather than a wide frame.
+                    val ringRadius = (this.size.minDimension * 0.78f - sw) / 2f
                     drawCircle(
                         color = color.copy(alpha = ringAlpha),
-                        radius = (this.size.minDimension - sw) / 2f,
+                        radius = ringRadius,
                         center = Offset(this.size.width / 2f, this.size.height / 2f),
                         style = Stroke(width = sw),
                     )

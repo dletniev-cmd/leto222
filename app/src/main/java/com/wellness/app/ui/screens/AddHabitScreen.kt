@@ -1,6 +1,7 @@
 package com.wellness.app.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -334,13 +335,23 @@ private fun FloatingAnchoredPopover(
     onDismiss: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    if (!visible || widthPx <= 0) return
+    if (widthPx <= 0) return
     val density = LocalDensity.current
     val widthDp = with(density) { widthPx.toDp() }
 
+    // MutableTransitionState lets us keep the Popup mounted while the exit
+    // animation is running. `targetState` follows `visible`; `currentState`
+    // only flips to false after the exit transition finishes. We render the
+    // Popup as long as either is true, which gives us a symmetric in/out
+    // scale+fade — exactly like the Telegram context menu.
+    val transition = remember { MutableTransitionState(false) }
+    transition.targetState = visible
+    val mounted = transition.currentState || transition.targetState
+    if (!mounted) return
+
     Popup(
         alignment = Alignment.BottomStart,
-        offset = IntOffset(0, with(density) { 8.dp.roundToPx() }),
+        offset = IntOffset(0, with(density) { 6.dp.roundToPx() }),
         onDismissRequest = onDismiss,
         properties = PopupProperties(
             focusable = true,
@@ -348,29 +359,28 @@ private fun FloatingAnchoredPopover(
             dismissOnClickOutside = true,
         ),
     ) {
-        // Enter animation: scale 0.96 → 1, fade 0 → 1. Runs once on mount.
-        var animateIn by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) { animateIn = true }
-
         AnimatedVisibility(
-            visible = animateIn,
+            visibleState = transition,
             enter = scaleIn(
-                initialScale = 0.95f,
-                animationSpec = tween(durationMillis = 180),
-            ) + fadeIn(tween(160)),
-            exit = scaleOut(targetScale = 0.96f) + fadeOut(tween(120)),
+                initialScale = 0.94f,
+                animationSpec = tween(durationMillis = 200),
+            ) + fadeIn(tween(180)),
+            exit = scaleOut(
+                targetScale = 0.94f,
+                animationSpec = tween(durationMillis = 170),
+            ) + fadeOut(tween(150)),
         ) {
             Box(
                 Modifier
                     .width(widthDp)
                     .shadow(
                         elevation = 22.dp,
-                        shape = RoundedCornerShape(18.dp),
+                        shape = RoundedCornerShape(20.dp),
                         clip = false,
                     )
                     .background(
                         color = Wellness.colors.container,
-                        shape = RoundedCornerShape(18.dp),
+                        shape = RoundedCornerShape(20.dp),
                     )
                     .padding(horizontal = 14.dp, vertical = 14.dp),
             ) {
@@ -525,17 +535,28 @@ private fun IconGrid(selected: String, tint: Color, onSelect: (String) -> Unit) 
     }
 }
 
+// 36 curated icons → exactly 6 rows × 6 columns. Every row is filled so the
+// grid reads as a tidy square; categories spread top-down: drink, food,
+// fitness, body / mind, time-of-day, books / misc.
 private val HabitIconCatalog: List<String> = listOf(
-    "bottle-bold-duotone", "cup-paper-bold-duotone", "cup-hot-bold-duotone", "tea-cup-bold-duotone", "wineglass-bold-duotone",
-    "waterdrop-bold-duotone", "plate-bold-duotone", "donut-bold-duotone", "donut-bitten-bold-duotone", "chef-hat-bold-duotone",
-    "dumbbell-bold-duotone", "dumbbells-bold-duotone", "running-bold-duotone", "running-2-bold-duotone", "walking-bold-duotone",
-    "bicycling-bold-duotone", "swimming-bold-duotone", "stretching-bold-duotone", "hiking-bold-duotone", "treadmill-round-bold-duotone",
-    "meditation-bold-duotone", "meditation-round-bold-duotone", "moon-stars-bold-duotone", "moon-sleep-bold-duotone", "bed-bold-duotone",
-    "heart-bold-duotone", "heart-pulse-bold-duotone", "pill-bold-duotone", "pills-bold-duotone", "leaf-bold-duotone",
-    "book-bookmark-bold-duotone", "book-2-bold-duotone", "notebook-bold-duotone", "square-academic-cap-bold-duotone", "pen-bold-duotone",
-    "clipboard-check-bold-duotone", "stopwatch-bold-duotone", "alarm-bold-duotone", "star-bold-duotone", "medal-star-bold-duotone",
-    "sun-bold-duotone", "sunrise-bold-duotone", "sunset-bold-duotone", "flame-bold-duotone", "fire-bold-duotone",
-    "scale-bold-duotone", "wallet-bold-duotone", "smile-circle-bold-duotone", "heart-shine-bold-duotone", "stars-bold-duotone",
+    // row 1 — drink / hydration
+    "bottle-bold-duotone", "cup-paper-bold-duotone", "cup-hot-bold-duotone",
+    "tea-cup-bold-duotone", "wineglass-bold-duotone", "waterdrop-bold-duotone",
+    // row 2 — food
+    "plate-bold-duotone", "donut-bold-duotone", "chef-hat-bold-duotone",
+    "pill-bold-duotone", "leaf-bold-duotone", "scale-bold-duotone",
+    // row 3 — fitness / movement
+    "dumbbell-bold-duotone", "running-bold-duotone", "walking-bold-duotone",
+    "bicycling-bold-duotone", "swimming-bold-duotone", "stretching-bold-duotone",
+    // row 4 — body / mind / sleep
+    "heart-bold-duotone", "heart-pulse-bold-duotone", "meditation-bold-duotone",
+    "moon-stars-bold-duotone", "bed-bold-duotone", "smile-circle-bold-duotone",
+    // row 5 — time of day / energy
+    "sun-bold-duotone", "sunrise-bold-duotone", "sunset-bold-duotone",
+    "flame-bold-duotone", "alarm-bold-duotone", "stopwatch-bold-duotone",
+    // row 6 — work / study / misc
+    "book-bookmark-bold-duotone", "notebook-bold-duotone", "pen-bold-duotone",
+    "clipboard-check-bold-duotone", "star-bold-duotone", "stars-bold-duotone",
 )
 
 // ───────────────────────────────────────────────────────────────────────────
