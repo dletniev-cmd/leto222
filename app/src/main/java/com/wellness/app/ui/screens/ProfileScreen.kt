@@ -20,7 +20,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -124,59 +128,49 @@ fun ProfileScreen(
 
         // ── Goal progress block ──────────────────────────────────────────
         //
-        // Container removed per user request — bare progress bar + caption
-        // sit directly on the screen background. Hit target stays the full
-        // width so tapping anywhere on the row opens the detail screen.
+        // Matches HTML prototype 1:1 — bare bar on background, then a
+        // single centred caption "Цель достигнута на N%" (percent in
+        // text/bold, prefix in muted). Тap anywhere in the block opens
+        // the detail screen — the chevron/«подробнее» row was removed
+        // per user request because the bar itself is the hit target.
         Box(
             Modifier
                 .fillMaxWidth()
                 .screenHPad()
-                .padding(bottom = 14.dp)
                 .noFeedbackClick(onClick = onProgressDetail),
         ) {
-            Column {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 GoalProgressBar(progress = breakdown.overall, modifier = Modifier.fillMaxWidth())
                 Box(Modifier.height(10.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Цель достигнута на ",
-                        color = Wellness.colors.muted,
-                        style = Wellness.typography.bodyMedium,
-                    )
-                    Text(
-                        "$percent%",
-                        color = Wellness.colors.text,
-                        style = Wellness.typography.titleSmall,
-                    )
-                    Box(Modifier.weight(1f))
-                    Text(
-                        "подробнее",
-                        color = Wellness.colors.muted,
-                        style = Wellness.typography.bodySmall,
-                    )
-                    Box(Modifier.size(4.dp))
-                    SolarIcon(
-                        name = "alt-arrow-right-outline",
-                        tint = Wellness.colors.muted,
-                        size = 14.dp,
-                    )
-                }
+                Text(
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(color = Wellness.colors.muted)) {
+                            append("Цель достигнута на ")
+                        }
+                        withStyle(
+                            SpanStyle(
+                                color = Wellness.colors.text,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        ) {
+                            append("$percent%")
+                        }
+                    },
+                    style = Wellness.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
 
         // ── 3 quick action buttons ───────────────────────────────────────
         //
-        // Placeholders for now — onClick handlers fire navigation hooks
-        // wired through WellnessApp so future screens (scanner, weigh-in,
-        // achievements) can drop in without touching ProfileScreen.
+        // Spacing matches the prototype: 16dp top / 18dp bottom around
+        // the row, 10dp gap between tiles, 62dp tile height, 22dp radius.
         Row(
             Modifier
                 .fillMaxWidth()
                 .screenHPad()
-                .padding(bottom = 18.dp),
+                .padding(top = 16.dp, bottom = 18.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             QuickAction(
@@ -271,7 +265,7 @@ private fun QuickAction(
 ) {
     Box(
         modifier
-            .height(72.dp)
+            .height(62.dp)
             .clip(RoundedCornerShape(22.dp))
             .background(Wellness.colors.container, RoundedCornerShape(22.dp))
             .noFeedbackClick(onClick = onClick),
