@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
+import com.wellness.app.ui.components.noFeedbackClick
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.AnnotatedString
@@ -499,6 +500,7 @@ private fun HabitCell(
     ringTargetScale: Float,
     visibleMiniCount: Int,
 ) {
+    val state = LocalAppState.current
     val todayKey = Dates.todayKey()
     val progressCount = habit.progressOn(todayKey)
     Column(
@@ -510,9 +512,14 @@ private fun HabitCell(
         // the labels. As the user scrolls vertically, the parent strip
         // translates up (carrying ring + labels) and each ring independently
         // morphs in X + scale into its mini-cluster slot via this layer.
+        //
+        // Tapping the ring increments today's progress (mirrors the same
+        // affordance on HomeScreen — previously this surface was inert,
+        // which was the "ничо не происходит" bug from the user report).
         Box(
             modifier = Modifier
                 .size(RingNatural)
+                .noFeedbackClick { state.tapHabit(habit.id) }
                 .graphicsLayer {
                     val t = collapseProgress()
                     // Short-circuit when the strip is fully expanded. This

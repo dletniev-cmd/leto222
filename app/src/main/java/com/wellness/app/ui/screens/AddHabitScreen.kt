@@ -1,14 +1,6 @@
 package com.wellness.app.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -38,7 +29,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -51,14 +41,16 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wellness.app.ui.components.ColorPickerGrid
+import com.wellness.app.ui.components.HeaderCheckButton
 import com.wellness.app.ui.components.OverlayHost
-import com.wellness.app.ui.components.PrimaryActionButton
 import com.wellness.app.ui.components.RoundedSlideOverlay
 import com.wellness.app.ui.components.SettingsCard
 import com.wellness.app.ui.components.SettingsHeader
 import com.wellness.app.ui.components.SettingsRow
 import com.wellness.app.ui.components.SettingsRowDivider
-import com.wellness.app.ui.components.TimePickerInline
+import com.wellness.app.ui.components.WellnessBottomSheet
+import com.wellness.app.ui.components.WheelPicker
+import com.wellness.app.ui.components.noFeedbackClick
 import com.wellness.app.ui.components.rememberParallaxProgress
 import com.wellness.app.ui.components.screenHPad
 import com.wellness.app.ui.icons.SolarIcon
@@ -78,7 +70,7 @@ private enum class GoalPeriod { Day, Week }
 private data class HabitDraft(
     val name: String = "",
     val icon: String = "bottle-bold-duotone",
-    val color: Color = AccentPalette[3],   // sky blue by default
+    val color: Color = AccentPalette[3],
     val goalKind: GoalKind = GoalKind.Count,
     val target: Int = 8,
     val unit: String = "стак.",
@@ -106,12 +98,9 @@ private data class HabitDraft(
 }
 
 /**
- * "Create habit" screen — new settings-list flow.
- *
- *   Root           name input + 4 settings rows (Цель / Иконка / Цвет /
- *                  Напоминание) + note + CTA. Icon and Color rows expand a
- *                  rounded popover card inline below themselves; Goal and
- *                  Reminder push a full sub-screen via RoundedSlideOverlay.
+ * "Create habit" — settings-list flow with modal bottom sheets for icon and
+ * colour, wheel-picker goal/time selection, and a top-right checkmark
+ * commit in the header (no pinned bottom CTA).
  */
 @Composable
 fun AddHabitScreen(onBack: () -> Unit) {
@@ -170,7 +159,7 @@ fun AddHabitScreen(onBack: () -> Unit) {
 // ROOT
 // ───────────────────────────────────────────────────────────────────────────
 
-private enum class RootExpand { None, Icon, Color }
+private enum class RootSheet { None, Icon, Color }
 
 @Composable
 private fun HabitRootScreen(
@@ -182,7 +171,7 @@ private fun HabitRootScreen(
     onCreate: () -> Unit,
 ) {
     val scroll = rememberScrollState()
-    var expand by remember { mutableStateOf(RootExpand.None) }
+    var sheet by remember { mutableStateOf(RootSheet.None) }
 
     val canCreate = draft.name.trim().isNotEmpty()
 
@@ -193,11 +182,17 @@ private fun HabitRootScreen(
                 .verticalScroll(scroll)
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .imePadding()
-                .padding(top = 6.dp, bottom = 120.dp),
+                .padding(top = 6.dp, bottom = 24.dp),
         ) {
-            SettingsHeader(title = "Новая привычка", onBack = onBack)
+            SettingsHeader(
+                title = "Новая привычка",
+                onBack = onBack,
+                trailing = {
+                    HeaderCheckButton(enabled = canCreate, onClick = onCreate)
+                },
+            )
 
-            // ── Name field with mini icon+color preview ────────────────────
+            // Name field with mini icon+color preview
             Box(Modifier.screenHPad().padding(top = 10.dp)) {
                 NamePreviewField(
                     name = draft.name,
@@ -207,7 +202,6 @@ private fun HabitRootScreen(
                 )
             }
 
-            // ── Parameters card ───────────────────────────────────────────
             SectionLabel("ПАРАМЕТРЫ", topPad = 22.dp)
             SettingsCard(
                 modifier = Modifier.screenHPad(),
@@ -227,18 +221,8 @@ private fun HabitRootScreen(
                     iconTile = WellnessColors.TilePink,
                     title = "Иконка",
                     showChevron = false,
-                    trailing = {
-                        MiniIconPreview(icon = draft.icon, color = draft.color)
-                    },
-                    onClick = {
-                        expand = if (expand == RootExpand.Icon) RootExpand.None else RootExpand.Icon
-                    },
-                )
-                IconPopover(
-                    visible = expand == RootExpand.Icon,
-                    selected = draft.icon,
-                    tint = draft.color,
-                    onSelect = { onDraft(draft.copy(icon = it)) },
+                    trailing = { MiniIconPreview(icon = draft.icon, color = draft.color) },
+                    onClick = { sheet = RootSheet.Icon },
                 )
                 SettingsRowDivider()
 
@@ -248,20 +232,9 @@ private fun HabitRootScreen(
                     title = "Цвет",
                     showChevron = false,
                     trailing = {
-                        Box(
-                            Modifier
-                                .size(26.dp)
-                                .background(draft.color, CircleShape),
-                        )
+                        Box(Modifier.size(26.dp).background(draft.color, CircleShape))
                     },
-                    onClick = {
-                        expand = if (expand == RootExpand.Color) RootExpand.None else RootExpand.Color
-                    },
-                )
-                ColorPopover(
-                    visible = expand == RootExpand.Color,
-                    selected = draft.color,
-                    onSelect = { onDraft(draft.copy(color = it)) },
+                    onClick = { sheet = RootSheet.Color },
                 )
                 SettingsRowDivider()
 
@@ -274,7 +247,6 @@ private fun HabitRootScreen(
                 )
             }
 
-            // ── Note ─────────────────────────────────────────────────────
             SectionLabel("ЗАМЕТКА", topPad = 22.dp)
             NoteCard(
                 value = draft.note,
@@ -284,21 +256,33 @@ private fun HabitRootScreen(
             Spacer(Modifier.height(36.dp))
         }
 
-        // ── Pinned bottom CTA ─────────────────────────────────────────────
-        Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Wellness.colors.bg)
-                .imePadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-        ) {
-            PrimaryActionButton(
-                label = "Создать привычку",
-                enabled = canCreate,
-                onClick = onCreate,
-            )
+        // Bottom sheets — animated in/out with WellnessBottomSheet
+        when (sheet) {
+            RootSheet.Icon -> WellnessBottomSheet(
+                title = "Иконка",
+                onDismiss = { sheet = RootSheet.None },
+                trailingIcon = "check-bold",
+                onTrailing = { /* selection commits on tap; sheet auto-dismisses */ },
+            ) {
+                IconGrid(
+                    selected = draft.icon,
+                    tint = draft.color,
+                    onSelect = { onDraft(draft.copy(icon = it)) },
+                )
+            }
+            RootSheet.Color -> WellnessBottomSheet(
+                title = "Цвет",
+                onDismiss = { sheet = RootSheet.None },
+                trailingIcon = "check-bold",
+                onTrailing = { /* nothing — colour applied live */ },
+            ) {
+                ColorPickerGrid(
+                    colors = AccentPalette,
+                    selected = draft.color,
+                    onSelect = { onDraft(draft.copy(color = it)) },
+                )
+            }
+            RootSheet.None -> Unit
         }
     }
 }
@@ -318,17 +302,17 @@ private fun NamePreviewField(name: String, icon: String, color: Color, onChange:
     Row(
         Modifier
             .fillMaxWidth()
-            .background(Wellness.colors.container, RoundedCornerShape(16.dp))
+            .background(Wellness.colors.container, RoundedCornerShape(18.dp))
             .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
-                .size(40.dp)
-                .background(color, RoundedCornerShape(11.dp)),
+                .size(44.dp)
+                .background(color, RoundedCornerShape(13.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            SolarIcon(name = icon, tint = Color.White, size = 22.dp)
+            SolarIcon(name = icon, tint = Color.White, size = 24.dp)
         }
         Spacer(Modifier.width(12.dp))
         Box(Modifier.weight(1f)) {
@@ -360,11 +344,11 @@ private fun NamePreviewField(name: String, icon: String, color: Color, onChange:
 private fun MiniIconPreview(icon: String, color: Color) {
     Box(
         Modifier
-            .size(26.dp)
-            .background(color, RoundedCornerShape(8.dp)),
+            .size(28.dp)
+            .background(color, RoundedCornerShape(9.dp)),
         contentAlignment = Alignment.Center,
     ) {
-        SolarIcon(name = icon, tint = Color.White, size = 15.dp)
+        SolarIcon(name = icon, tint = Color.White, size = 16.dp)
     }
 }
 
@@ -400,68 +384,7 @@ private fun NoteCard(value: String, onChange: (String) -> Unit) {
     }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// POPOVERS — anchored expansion below the tapped row.
-// ───────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun ColumnScope_ExpandedCard(content: @Composable () -> Unit) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp)
-            .background(
-                color = Wellness.colors.bg.copy(alpha = 0.92f),
-                shape = RoundedCornerShape(16.dp),
-            )
-            .padding(horizontal = 10.dp, vertical = 12.dp),
-    ) { content() }
-}
-
-@Composable
-private fun IconPopover(
-    visible: Boolean,
-    selected: String,
-    tint: Color,
-    onSelect: (String) -> Unit,
-) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = expandVertically(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
-            fadeIn(tween(220)),
-        exit = shrinkVertically(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
-            fadeOut(tween(160)),
-    ) {
-        ColumnScope_ExpandedCard {
-            IconGrid(selected = selected, tint = tint, onSelect = onSelect)
-        }
-    }
-}
-
-@Composable
-private fun ColorPopover(
-    visible: Boolean,
-    selected: Color,
-    onSelect: (Color) -> Unit,
-) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = expandVertically(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
-            fadeIn(tween(220)),
-        exit = shrinkVertically(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
-            fadeOut(tween(160)),
-    ) {
-        ColumnScope_ExpandedCard {
-            ColorPickerGrid(
-                colors = AccentPalette,
-                selected = selected,
-                onSelect = onSelect,
-            )
-        }
-    }
-}
-
-/** 5-column icon grid used inside the icon popover. */
+/** 5-column icon grid used inside the icon bottom sheet. */
 @Composable
 private fun IconGrid(selected: String, tint: Color, onSelect: (String) -> Unit) {
     val icons = HabitIconCatalog
@@ -481,23 +404,23 @@ private fun IconGrid(selected: String, tint: Color, onSelect: (String) -> Unit) 
                         Box(
                             Modifier
                                 .weight(1f)
-                                .height(44.dp)
+                                .height(54.dp)
                                 .background(
-                                    if (active) tint.copy(alpha = 0.20f)
+                                    if (active) tint.copy(alpha = 0.22f)
                                     else Wellness.colors.track,
-                                    RoundedCornerShape(12.dp),
+                                    RoundedCornerShape(14.dp),
                                 )
-                                .clickable { onSelect(ic) },
+                                .noFeedbackClick { onSelect(ic) },
                             contentAlignment = Alignment.Center,
                         ) {
                             SolarIcon(
                                 name = ic,
                                 tint = if (active) tint else Wellness.colors.text,
-                                size = 22.dp,
+                                size = 24.dp,
                             )
                         }
                     } else {
-                        Box(Modifier.weight(1f).height(44.dp))
+                        Box(Modifier.weight(1f).height(54.dp))
                     }
                 }
             }
@@ -505,34 +428,25 @@ private fun IconGrid(selected: String, tint: Color, onSelect: (String) -> Unit) 
     }
 }
 
-/**
- * Curated catalog of icons for the habit popover — broader than the wizard
- * catalog so users can find what they want without scrolling forever.
- * Falls back to [WizardIconCatalog] entries.
- */
 private val HabitIconCatalog: List<String> = listOf(
-    // hydration / food
     "bottle-bold-duotone", "cup-paper-bold-duotone", "cup-hot-bold-duotone", "tea-cup-bold-duotone", "wineglass-bold-duotone",
     "waterdrop-bold-duotone", "plate-bold-duotone", "donut-bold-duotone", "donut-bitten-bold-duotone", "chef-hat-bold-duotone",
-    // fitness
     "dumbbell-bold-duotone", "dumbbells-bold-duotone", "running-bold-duotone", "running-2-bold-duotone", "walking-bold-duotone",
     "bicycling-bold-duotone", "swimming-bold-duotone", "stretching-bold-duotone", "hiking-bold-duotone", "treadmill-round-bold-duotone",
-    // mind / sleep / health
     "meditation-bold-duotone", "meditation-round-bold-duotone", "moon-stars-bold-duotone", "moon-sleep-bold-duotone", "bed-bold-duotone",
     "heart-bold-duotone", "heart-pulse-bold-duotone", "pill-bold-duotone", "pills-bold-duotone", "leaf-bold-duotone",
-    // learning / focus
     "book-bookmark-bold-duotone", "book-2-bold-duotone", "notebook-bold-duotone", "square-academic-cap-bold-duotone", "pen-bold-duotone",
     "clipboard-check-bold-duotone", "stopwatch-bold-duotone", "alarm-bold-duotone", "star-bold-duotone", "medal-star-bold-duotone",
-    // misc
     "sun-bold-duotone", "sunrise-bold-duotone", "sunset-bold-duotone", "flame-bold-duotone", "fire-bold-duotone",
     "scale-bold-duotone", "wallet-bold-duotone", "smile-circle-bold-duotone", "heart-shine-bold-duotone", "stars-bold-duotone",
 )
 
 // ───────────────────────────────────────────────────────────────────────────
-// GOAL SUB-SCREEN
+// GOAL SUB-SCREEN — wheel-based number picker
 // ───────────────────────────────────────────────────────────────────────────
 
 private val UnitPresets = listOf("раз", "стак.", "мл", "мин", "км", "стр.", "шаг.", "г", "ккал")
+private val TargetValues: List<Int> = (1..999).toList()
 
 @Composable
 private fun HabitGoalSubScreen(draft: HabitDraft, onDraft: (HabitDraft) -> Unit, onBack: () -> Unit) {
@@ -545,68 +459,76 @@ private fun HabitGoalSubScreen(draft: HabitDraft, onDraft: (HabitDraft) -> Unit,
                 .verticalScroll(scroll)
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .imePadding()
-                .padding(top = 6.dp, bottom = 120.dp),
+                .padding(top = 6.dp, bottom = 24.dp),
         ) {
-            SettingsHeader(title = "Цель", onBack = onBack)
+            SettingsHeader(
+                title = "Цель",
+                onBack = onBack,
+                trailing = { HeaderCheckButton(onClick = onBack) },
+            )
 
-            // BIG NUMBER HERO -------------------------------------------------
+            // ── Wheel (number) + unit label ──────────────────────────────
+            val enabled = draft.goalKind == GoalKind.Count
             Column(
                 Modifier
                     .screenHPad()
                     .fillMaxWidth()
-                    .background(Wellness.colors.container, RoundedCornerShape(24.dp))
-                    .padding(vertical = 28.dp, horizontal = 18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .background(Wellness.colors.container, RoundedCornerShape(22.dp))
+                    .padding(vertical = 12.dp, horizontal = 14.dp),
             ) {
-                val enabled = draft.goalKind == GoalKind.Count
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        if (enabled) draft.target.toString() else "✓",
-                        color = if (enabled) Wellness.colors.text else Wellness.colors.accent,
-                        style = TextStyle(
-                            fontFamily = Manrope,
-                            fontSize = 56.sp,
-                            color = if (enabled) Wellness.colors.text else Wellness.colors.accent,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                            letterSpacing = (-0.03).sp,
-                        ),
-                    )
-                    if (enabled) {
-                        Spacer(Modifier.width(10.dp))
+                if (enabled) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        WheelPicker(
+                            values = TargetValues,
+                            initialIndex = (draft.target - 1).coerceIn(0, TargetValues.lastIndex),
+                            modifier = Modifier.weight(2f),
+                            visibleItems = 5,
+                            onSelected = { _, v -> onDraft(draft.copy(target = v)) },
+                            label = { it.toString() },
+                        )
+                        Spacer(Modifier.width(14.dp))
                         Text(
-                            draft.unit.ifBlank { "раз" } + " " +
-                                if (draft.period == GoalPeriod.Day) "в день" else "в неделю",
+                            draft.unit.ifBlank { "раз" },
                             color = Wellness.colors.muted,
                             style = Wellness.typography.titleMedium,
-                            modifier = Modifier.padding(bottom = 12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 4.dp),
                         )
                     }
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    if (enabled)
-                        "Привычка считается выполненной, когда вы дойдёте до этого значения."
-                    else "Просто галочка раз в день — без счётчика.",
-                    color = Wellness.colors.muted,
-                    style = Wellness.typography.bodySmall,
-                )
-                if (enabled) {
-                    Spacer(Modifier.height(18.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                } else {
+                    // "Просто факт" — show centred check glyph instead of wheel
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(220.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        StepperButton(icon = "alt-arrow-down-outline") {
-                            if (draft.target > 1) onDraft(draft.copy(target = draft.target - 1))
-                        }
-                        StepperButton(icon = "alt-arrow-up-outline", accent = true) {
-                            if (draft.target < 999) onDraft(draft.copy(target = draft.target + 1))
+                        Box(
+                            Modifier
+                                .size(96.dp)
+                                .background(
+                                    Wellness.colors.accentSoft,
+                                    CircleShape,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            SolarIcon(
+                                name = "check-bold",
+                                tint = Wellness.colors.accent,
+                                size = 56.dp,
+                            )
                         }
                     }
                 }
             }
 
-            // Goal kind segmented --------------------------------------------
-            SectionLabel("ТИП ЦЕЛИ")
+            // Goal kind segmented
+            SectionLabel("ТИП ЦЕЛИ", topPad = 22.dp)
             Row(
                 Modifier
                     .screenHPad()
@@ -623,9 +545,8 @@ private fun HabitGoalSubScreen(draft: HabitDraft, onDraft: (HabitDraft) -> Unit,
                 }
             }
 
-            // Unit chips ------------------------------------------------------
             if (draft.goalKind == GoalKind.Count) {
-                SectionLabel("ЕДИНИЦА ИЗМЕРЕНИЯ")
+                SectionLabel("ЕДИНИЦА ИЗМЕРЕНИЯ", topPad = 22.dp)
                 Column(Modifier.screenHPad()) {
                     ChipWrap(
                         options = UnitPresets,
@@ -634,7 +555,6 @@ private fun HabitGoalSubScreen(draft: HabitDraft, onDraft: (HabitDraft) -> Unit,
                     )
                 }
 
-                // Period
                 SectionLabel("ПЕРИОД", topPad = 22.dp)
                 SettingsCard(
                     modifier = Modifier.screenHPad(),
@@ -660,19 +580,6 @@ private fun HabitGoalSubScreen(draft: HabitDraft, onDraft: (HabitDraft) -> Unit,
 
             Spacer(Modifier.height(36.dp))
         }
-
-        // Pinned bottom CTA
-        Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Wellness.colors.bg)
-                .imePadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-        ) {
-            PrimaryActionButton(label = "Сохранить", onClick = onBack)
-        }
     }
 }
 
@@ -686,33 +593,13 @@ private fun RowScope.SegItem(label: String, active: Boolean, onClick: () -> Unit
                 if (active) Wellness.colors.accentSoft else Color.Transparent,
                 RoundedCornerShape(11.dp),
             )
-            .clickable { onClick() },
+            .noFeedbackClick { onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Text(
             label,
             color = if (active) Wellness.colors.accent else Wellness.colors.muted,
             style = Wellness.typography.labelMedium,
-        )
-    }
-}
-
-@Composable
-private fun StepperButton(icon: String, accent: Boolean = false, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .size(52.dp)
-            .background(
-                if (accent) Wellness.colors.accent else Wellness.colors.track,
-                CircleShape,
-            )
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        SolarIcon(
-            name = icon,
-            tint = if (accent) Color(0xFF0C1F12) else Wellness.colors.text,
-            size = 24.dp,
         )
     }
 }
@@ -752,8 +639,6 @@ private fun PeriodRow(icon: String, tile: Color, title: String, selected: Boolea
 /** Wrapping chip layout — items flow onto a new row when they don't fit. */
 @Composable
 private fun ChipWrap(options: List<String>, selected: String, onSelect: (String) -> Unit) {
-    // Simple wrap by chunking into rows of approximate width — Compose has no
-    // FlowRow in base material, but for short labels 4-per-row reads cleanly.
     val rows = options.chunked(4)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         rows.forEach { row ->
@@ -766,7 +651,7 @@ private fun ChipWrap(options: List<String>, selected: String, onSelect: (String)
                                 if (active) Wellness.colors.accentSoft else Wellness.colors.track,
                                 RoundedCornerShape(999.dp),
                             )
-                            .clickable { onSelect(opt) }
+                            .noFeedbackClick { onSelect(opt) }
                             .padding(horizontal = 14.dp, vertical = 9.dp),
                     ) {
                         Text(
@@ -782,8 +667,11 @@ private fun ChipWrap(options: List<String>, selected: String, onSelect: (String)
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// REMINDER SUB-SCREEN
+// REMINDER SUB-SCREEN — wheel HH:MM
 // ───────────────────────────────────────────────────────────────────────────
+
+private val HourValues: List<Int> = (0..23).toList()
+private val MinuteValues: List<Int> = (0..59).toList()
 
 @Composable
 private fun HabitReminderSubScreen(draft: HabitDraft, onDraft: (HabitDraft) -> Unit, onBack: () -> Unit) {
@@ -795,9 +683,13 @@ private fun HabitReminderSubScreen(draft: HabitDraft, onDraft: (HabitDraft) -> U
                 .verticalScroll(scroll)
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .imePadding()
-                .padding(top = 6.dp, bottom = 120.dp),
+                .padding(top = 6.dp, bottom = 24.dp),
         ) {
-            SettingsHeader(title = "Напоминание", onBack = onBack)
+            SettingsHeader(
+                title = "Напоминание",
+                onBack = onBack,
+                trailing = { HeaderCheckButton(onClick = onBack) },
+            )
 
             // Day grid
             SectionLabel("ДНИ")
@@ -820,7 +712,7 @@ private fun HabitReminderSubScreen(draft: HabitDraft, onDraft: (HabitDraft) -> U
                 }
             }
 
-            // Notification toggle + time
+            // Push toggle
             SectionLabel("УВЕДОМЛЕНИЕ", topPad = 22.dp)
             SettingsCard(
                 modifier = Modifier.screenHPad(),
@@ -838,32 +730,50 @@ private fun HabitReminderSubScreen(draft: HabitDraft, onDraft: (HabitDraft) -> U
                         )
                     },
                 )
-                if (draft.remind) {
-                    SettingsRowDivider()
-                    Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                        TimePickerInline(
-                            hour = draft.remindH,
-                            minute = draft.remindM,
-                            onChange = { h, m -> onDraft(draft.copy(remindH = h, remindM = m)) },
+            }
+
+            // Time wheels
+            if (draft.remind) {
+                SectionLabel("ВРЕМЯ", topPad = 22.dp)
+                Box(
+                    Modifier
+                        .screenHPad()
+                        .fillMaxWidth()
+                        .background(Wellness.colors.container, RoundedCornerShape(22.dp))
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        WheelPicker(
+                            values = HourValues,
+                            initialIndex = draft.remindH.coerceIn(0, 23),
+                            modifier = Modifier.weight(1f),
+                            visibleItems = 5,
+                            onSelected = { _, v -> onDraft(draft.copy(remindH = v)) },
+                            label = { "%02d".format(it) },
+                        )
+                        Text(
+                            text = ":",
+                            color = Wellness.colors.text,
+                            style = Wellness.typography.displayMedium,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                        )
+                        WheelPicker(
+                            values = MinuteValues,
+                            initialIndex = draft.remindM.coerceIn(0, 59),
+                            modifier = Modifier.weight(1f),
+                            visibleItems = 5,
+                            onSelected = { _, v -> onDraft(draft.copy(remindM = v)) },
+                            label = { "%02d".format(it) },
                         )
                     }
                 }
             }
 
             Spacer(Modifier.height(36.dp))
-        }
-
-        // Bottom CTA
-        Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Wellness.colors.bg)
-                .imePadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-        ) {
-            PrimaryActionButton(label = "Сохранить", onClick = onBack)
         }
     }
 }
@@ -886,9 +796,9 @@ private fun DayRow(selected: Set<Int>, onChange: (Set<Int>) -> Unit) {
                     .height(44.dp)
                     .background(
                         if (active) Wellness.colors.accentSoft else Wellness.colors.track,
-                        RoundedCornerShape(12.dp),
+                        CircleShape,
                     )
-                    .clickable {
+                    .noFeedbackClick {
                         onChange(if (active) selected - iso else selected + iso)
                     },
                 contentAlignment = Alignment.Center,
@@ -913,7 +823,7 @@ private fun RowScope.DayPreset(label: String, active: Boolean, onClick: () -> Un
                 if (active) Wellness.colors.accentSoft else Wellness.colors.track,
                 RoundedCornerShape(999.dp),
             )
-            .clickable { onClick() },
+            .noFeedbackClick { onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -933,7 +843,7 @@ private fun SwitchPill(on: Boolean, onToggle: (Boolean) -> Unit) {
                 if (on) Wellness.colors.accent else Wellness.colors.muted.copy(alpha = 0.35f),
                 RoundedCornerShape(999.dp),
             )
-            .clickable { onToggle(!on) },
+            .noFeedbackClick { onToggle(!on) },
         contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
         Box(

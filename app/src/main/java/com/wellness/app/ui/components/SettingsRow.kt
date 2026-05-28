@@ -113,11 +113,15 @@ fun SettingsCard(
  * back button rather than a chunky chip.
  */
 @Composable
-fun SettingsHeader(title: String, onBack: () -> Unit) {
+fun SettingsHeader(
+    title: String,
+    onBack: () -> Unit,
+    trailing: (@Composable () -> Unit)? = null,
+) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(start = 4.dp, end = 14.dp, top = 4.dp, bottom = 6.dp),
+            .padding(start = 4.dp, end = 8.dp, top = 4.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         NoFeedbackButton(onClick = onBack, modifier = Modifier.size(44.dp)) {
@@ -136,5 +140,32 @@ fun SettingsHeader(title: String, onBack: () -> Unit) {
             style = Wellness.typography.headlineMedium,
             modifier = Modifier.weight(1f),
         )
+        if (trailing != null) trailing()
+    }
+}
+
+/**
+ * Compact accent checkmark button suitable for the top-right slot of
+ * a [SettingsHeader] — replaces a heavier pinned bottom CTA. Rendered
+ * as a soft accent pill with a bold check glyph; disabled state fades
+ * to muted so the user can still see the affordance.
+ */
+@Composable
+fun HeaderCheckButton(enabled: Boolean = true, onClick: () -> Unit) {
+    val bg = if (enabled) Wellness.colors.accent else Wellness.colors.muted.copy(alpha = 0.18f)
+    val tint = if (enabled) Color.White else Wellness.colors.muted
+    NoFeedbackButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(44.dp),
+    ) {
+        Box(
+            Modifier
+                .size(38.dp)
+                .background(bg, RoundedCornerShape(13.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            SolarIcon(name = "check-bold", tint = tint, size = 22.dp)
+        }
     }
 }
