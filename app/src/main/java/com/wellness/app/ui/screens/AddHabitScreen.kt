@@ -53,6 +53,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Color
@@ -797,6 +798,20 @@ private fun NoteCard(value: String, onChange: (String) -> Unit) {
 @Composable
 private fun IconGrid(selected: String, tint: Color, onSelect: (String) -> Unit) {
     val icons = HabitIconCatalog
+
+    // Safety net: even though prewarmAll now decodes the catalog right
+    // after the navbar icons, an aggressive cold-start path could still
+    // race the user into the picker before all 36 are in cache. This
+    // LaunchedEffect runs on IO and synchronously fills any gaps —
+    // recompositions then pick the freshly-cached bitmaps automatically
+    // via the SnapshotStateMap reads in SolarIcon.
+    val appContext = LocalContext.current.applicationContext
+    LaunchedEffect(icons) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.wellness.app.ui.icons.SolarIconLoader.ensureLoadedBlocking(appContext, icons)
+        }
+    }
+
     val columns = 6
     val rows = (icons.size + columns - 1) / columns
     val gap = 4.dp
