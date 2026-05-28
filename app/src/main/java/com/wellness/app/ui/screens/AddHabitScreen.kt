@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -472,10 +473,12 @@ private fun RingHeroShelf(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        // Dimmed neighbour — left
-        HeroRingMini(icon = "checklist-minimalistic-outline", color = Wellness.colors.muted, size = 56.dp, strokeWidth = 4.dp, alpha = 0.45f)
+        // Lively neighbour — left: cycles icon+colour every ~5s and the
+        // ring smoothly fills 0→1 on a 4s loop, so the screen reads as
+        // a tiny live demo of how the user's other habits behave.
+        NeighbourRing(seed = 0, animationOffsetMs = 0)
         Spacer(Modifier.width(22.dp))
-        // Live centre preview — tappable
+        // Live centre preview — tappable shortcut into the icon picker.
         Box(
             Modifier
                 .size(104.dp)
@@ -491,30 +494,113 @@ private fun RingHeroShelf(
             SolarIcon(name = icon, tint = color, size = 44.dp)
         }
         Spacer(Modifier.width(22.dp))
-        // Dimmed neighbour — right
-        HeroRingMini(icon = "cup-hot-outline", color = Wellness.colors.muted, size = 56.dp, strokeWidth = 4.dp, alpha = 0.45f)
+        NeighbourRing(seed = 1, animationOffsetMs = 1700)
     }
 }
 
+/**
+ * Pool of duotone Solar glyphs used for the decorative side rings. All
+ * names are present in `app/src/main/assets/icons` — keep this list
+ * trimmed to icons that actually ship in the APK to avoid blank rings
+ * if the SVG loader misses (which currently falls back to nothing).
+ */
+private val NeighbourIcons: List<String> = listOf(
+    "dumbbell-bold-duotone",
+    "running-bold-duotone",
+    "cup-hot-bold-duotone",
+    "bicycling-bold-duotone",
+    "heart-pulse-bold-duotone",
+    "bonfire-bold-duotone",
+    "chef-hat-bold-duotone",
+    "book-bookmark-bold-duotone",
+    "moon-bold-duotone",
+    "leaf-bold-duotone",
+    "alarm-bold-duotone",
+    "bath-bold-duotone",
+    "fire-bold-duotone",
+    "basketball-bold-duotone",
+)
+
+/**
+ * One of the two decorative side rings flanking the hero preview.
+ *
+ * Every ~5 seconds the icon and colour are re-rolled from the live
+ * accent palette (deduped against the current value so we never roll
+ * the same one in a row). The colour swap goes through
+ * [animateColorAsState] for a smooth tween instead of a hard cut.
+ *
+ * The ring itself fills from 0 → 1 over 4 seconds on a continuous
+ * infinite loop — easing makes the first chunk feel decisive and the
+ * last chunk feel like it's "settling", same as a habit ticking off
+ * its target. After the fill the cycle restarts so the rings always
+ * read as alive even when the user is just thinking about the name.
+ *
+ * @param seed initial pick offset, so the two flanking rings don't
+ *   show the same icon at the same moment.
+ * @param animationOffsetMs phase shift for the fill loop, again so the
+ *   left/right rings aren't perfectly synchronised.
+ */
 @Composable
-private fun HeroRingMini(
-    icon: String,
-    color: Color,
-    size: androidx.compose.ui.unit.Dp,
-    strokeWidth: androidx.compose.ui.unit.Dp,
-    alpha: Float,
-) {
+private fun NeighbourRing(seed: Int, animationOffsetMs: Int) {
+    val palette = AccentPalette
+    var iconIdx by remember { mutableStateOf((seed * 7) % NeighbourIcons.size) }
+    var colorIdx by remember { mutableStateOf((seed * 5) % palette.size) }
+
+    LaunchedEffect(seed) {
+        // Initial dwell, then continuously roll fresh pairs.
+        kotlinx.coroutines.delay(5000L + seed * 400L)
+        while (true) {
+            var ni: Int
+            do { ni = kotlin.random.Random.nextInt(NeighbourIcons.size) } while (ni == iconIdx)
+            var nc: Int
+            do { nc = kotlin.random.Random.nextInt(palette.size) } while (nc == colorIdx)
+            iconIdx = ni
+            colorIdx = nc
+            kotlinx.coroutines.delay(5000L)
+        }
+    }
+
+    val targetColor = palette[colorIdx]
+    val animatedColor by androidx.compose.animation.animateColorAsState(
+        targetValue = targetColor,
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 700, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        label = "neighbour-color",
+    )
+
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "neighbour-progress")
+    val progress by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(
+                durationMillis = 4000,
+                delayMillis = animationOffsetMs,
+                easing = androidx.compose.animation.core.FastOutSlowInEasing,
+            ),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Restart,
+        ),
+        label = "p",
+    )
+
     Box(
-        Modifier.size(size).alpha(alpha),
+        Modifier.size(56.dp).alpha(0.78f),
         contentAlignment = Alignment.Center,
     ) {
         ProgressRing(
-            progress = 1f,
-            color = color,
-            size = size,
-            strokeWidth = strokeWidth,
+            progress = progress,
+            color = animatedColor,
+            size = 56.dp,
+            strokeWidth = 4.dp,
         )
-        SolarIcon(name = icon, tint = color, size = size * 0.42f)
+        // Crossfade swaps the glyph on a soft 250ms dissolve when the
+        // 5-second timer fires, instead of a hard texture swap.
+        androidx.compose.animation.Crossfade(
+            targetState = NeighbourIcons[iconIdx],
+            animationSpec = androidx.compose.animation.core.tween(250),
+            label = "neighbour-icon",
+        ) { name ->
+            SolarIcon(name = name, tint = animatedColor, size = 22.dp)
+        }
     }
 }
 

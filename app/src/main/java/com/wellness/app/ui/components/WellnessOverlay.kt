@@ -113,6 +113,7 @@ fun OverlayHost(
 fun RoundedSlideOverlay(
     parallaxProgress: MutableFloatState,
     onDismissed: () -> Unit,
+    animateIn: Boolean = true,
     content: @Composable (animatedBack: () -> Unit) -> Unit,
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -126,7 +127,12 @@ fun RoundedSlideOverlay(
     val edgeWidthPx = with(density) { SwipeBackEdgeWidth.toPx() }
     val velocityCommitPx = with(density) { SwipeBackCommitVelocityDpPerSec.toPx() }
 
-    val dismissProgress = remember { Animatable(1f) }
+    // animateIn=false means this overlay was already on screen as an
+    // underlay (we just popped its child off) and should appear at its
+    // final position without a slide-in. Used by the stacked-overlay
+    // render in WellnessApp so popping Logs → Other doesn't replay
+    // Other's intro slide.
+    val dismissProgress = remember { Animatable(if (animateIn) 1f else 0f) }
     val currentOnDismissed by rememberUpdatedState(onDismissed)
 
     // Mirror dismissProgress into the host's parallax so the layer behind us
@@ -143,7 +149,9 @@ fun RoundedSlideOverlay(
     // at app startup via the icon prewarm in MainActivity, so the
     // destination is already in cache by the time it composes here.
     LaunchedEffect(Unit) {
-        dismissProgress.animateTo(targetValue = 0f, animationSpec = OverlaySpring)
+        if (animateIn) {
+            dismissProgress.animateTo(targetValue = 0f, animationSpec = OverlaySpring)
+        }
     }
 
     val animatedBack: () -> Unit = remember(scope) {

@@ -100,12 +100,34 @@ fun WellnessApp() {
 
     // Stack of overlays so a sub-screen can pop back to its parent
     // (e.g. Logs opened from Other slides back into Other, not all the
-    // way to the home screen). Pushing the same overlay twice is fine
-    // — `key(current)` below treats each push as a fresh entry.
+    // way to the home screen).
+    //
+    // Rendering model: the *top* of the stack is the active overlay —
+    // it gets a RoundedSlideOverlay that drives the host parallax (so
+    // the home tab content slides/zooms behind it), is interactive, and
+    // can be dismissed by swipe-back. If the stack has a level below
+    // (e.g. [Other, Logs]) we render that **second-from-top** overlay
+    // statically as an "underlay" behind the active one, with no swipe
+    // gestures and a no-op back. That guarantees:
+    //   - When the user taps Логи from Другое, the slide-in of Logs
+    //     reveals Other behind it — not the home tab (Profile). The
+    //     previous code unmounted Other on the key change and the user
+    //     briefly saw Profile through the gap.
+    //   - When the user swipes Logs back, Logs slides out to the right
+    //     revealing the still-rendered Other below. After onDismissed
+    //     fires we re-mount Other as the new active top, but it was
+    //     already at its final on-screen position so there's no second
+    //     slide-in animation (see `animateIn` below).
+    //
+    // `lastAction` tells the active RoundedSlideOverlay whether the
+    // user got here via PUSH (animate in from the right) or POP (it
+    // was already on screen as an underlay — no entry animation).
     var overlayStack by remember { mutableStateOf<List<AddOverlay>>(emptyList()) }
+    var lastAction by remember { mutableStateOf("init") }
     val overlay: AddOverlay? = overlayStack.lastOrNull()
-    val push: (AddOverlay) -> Unit = { o -> overlayStack = overlayStack + o }
-    val pop: () -> Unit = { overlayStack = overlayStack.dropLast(1) }
+    val underlay: AddOverlay? = if (overlayStack.size >= 2) overlayStack[overlayStack.size - 2] else null
+    val push: (AddOverlay) -> Unit = { o -> overlayStack = overlayStack + o; lastAction = "push" }
+    val pop: () -> Unit = { overlayStack = overlayStack.dropLast(1); lastAction = "pop" }
     val parallax = rememberParallaxProgress()
 
     Box(Modifier.fillMaxSize().background(Wellness.colors.bg)) {
@@ -171,35 +193,45 @@ fun WellnessApp() {
             )
         }
 
+        // Underlay — only the second-from-top overlay, rendered
+        // statically full-screen behind the active one (no slide, no
+        // swipe-back, no-op onBack). Keeps the parent visible during
+        // child push/pop so the home tab never flashes through.
+        underlay?.let { u ->
+            if (u != AddOverlay.Weight) {
+                Box(Modifier.fillMaxSize().background(Wellness.colors.bg)) {
+                    OverlayContent(
+                        current = u,
+                        animatedBack = {},
+                        onPushLogs = {},
+                    )
+                }
+            }
+        }
+
         // Multi-field forms get the full-screen "slide in from the right"
         // overlay. Weight is a BottomSheet (rendered outside this branch).
         overlay?.let { current ->
             if (current == AddOverlay.Weight) {
                 AddWeightScreen(onBack = { pop() })
             } else {
-                key(current) {
+                // Only animate-in for PUSH actions. If we got here via
+                // POP (the user dismissed a child overlay), this view
+                // was already on screen as an underlay — re-mounting it
+                // and re-running the slide-in would look like the new
+                // top "appears" from the right one extra time.
+                val animateInTop = lastAction != "pop"
+                key(current, animateInTop) {
                     RoundedSlideOverlay(
                         parallaxProgress = parallax,
                         onDismissed = { pop() },
+                        animateIn = animateInTop,
                     ) { animatedBack ->
-                        when (current) {
-                            AddOverlay.Habit -> AddHabitScreen(onBack = animatedBack)
-                            AddOverlay.Task -> AddTaskScreen(onBack = animatedBack)
-                            AddOverlay.Nutrition -> AddNutritionScreen(onBack = animatedBack)
-                            AddOverlay.Sleep -> AddSleepScreen(onBack = animatedBack)
-                            AddOverlay.Weight -> {} // handled above
-                            AddOverlay.EditProfile -> EditProfileScreen(onBack = animatedBack)
-                            AddOverlay.Goals -> GoalsScreen(onBack = animatedBack)
-                            AddOverlay.Appearance -> AppearanceScreen(onBack = animatedBack)
-                            AddOverlay.Notifications -> NotificationsScreen(onBack = animatedBack)
-                            AddOverlay.Bindings -> BindingsScreen(onBack = animatedBack)
-                            AddOverlay.Tiwi -> TiwiPlaceholder(onBack = animatedBack)
-                            AddOverlay.Other -> OtherScreen(
-                                onBack = animatedBack,
-                                onLogs = { push(AddOverlay.Logs) },
-                            )
-                            AddOverlay.Logs -> LogsScreen(onBack = animatedBack)
-                        }
+                        OverlayContent(
+                            current = current,
+                            animatedBack = animatedBack,
+                            onPushLogs = { push(AddOverlay.Logs) },
+                        )
                     }
                 }
             }
@@ -210,6 +242,35 @@ fun WellnessApp() {
         // The previous launch-time dialog interrupted the cold-start flow
         // after every crash and looked alarming — the new screen lets the
         // user copy logs on demand without blocking the UI.
+    }
+}
+
+/**
+ * Renders the body of a single overlay level. Extracted so both the
+ * static underlay (no animation, no back) and the interactive top
+ * (slide+swipe via RoundedSlideOverlay) share one switch and stay in
+ * sync when new overlay types are added.
+ */
+@Composable
+private fun OverlayContent(
+    current: AddOverlay,
+    animatedBack: () -> Unit,
+    onPushLogs: () -> Unit,
+) {
+    when (current) {
+        AddOverlay.Habit -> AddHabitScreen(onBack = animatedBack)
+        AddOverlay.Task -> AddTaskScreen(onBack = animatedBack)
+        AddOverlay.Nutrition -> AddNutritionScreen(onBack = animatedBack)
+        AddOverlay.Sleep -> AddSleepScreen(onBack = animatedBack)
+        AddOverlay.Weight -> {} // weight is a bottom-sheet, handled elsewhere
+        AddOverlay.EditProfile -> EditProfileScreen(onBack = animatedBack)
+        AddOverlay.Goals -> GoalsScreen(onBack = animatedBack)
+        AddOverlay.Appearance -> AppearanceScreen(onBack = animatedBack)
+        AddOverlay.Notifications -> NotificationsScreen(onBack = animatedBack)
+        AddOverlay.Bindings -> BindingsScreen(onBack = animatedBack)
+        AddOverlay.Tiwi -> TiwiPlaceholder(onBack = animatedBack)
+        AddOverlay.Other -> OtherScreen(onBack = animatedBack, onLogs = onPushLogs)
+        AddOverlay.Logs -> LogsScreen(onBack = animatedBack)
     }
 }
 

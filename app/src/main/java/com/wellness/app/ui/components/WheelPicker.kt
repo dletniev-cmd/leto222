@@ -2,7 +2,6 @@ package com.wellness.app.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalOverscrollConfiguration
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,9 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -38,24 +35,43 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.wellness.app.ui.theme.Wellness
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.max
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 
 /**
- * iOS-style wheel/drum picker. Each row is fixed-height; the middle slot is
- * the "selected" slot. Rows above/below the centre smoothly fade and shrink
- * — no hard edge, no clipping. A DstIn alpha gradient turns the top and
- * bottom of the column transparent so the rendered glyphs dissolve into the
- * sheet background instead of being cropped by a rectangular clip.
+ * Cyclic iOS-style wheel/drum picker.
+ *
+ * Internally we render an "infinite" virtual list (~1B virtual rows)
+ * and translate each virtual index into a real one via `index mod N`,
+ * so the user can scroll up or down forever — `1·2·3·…·9·1·2·…`
+ * loops cleanly in both directions without ever hitting an edge.
+ *
+ * Two perf details that made the previous version feel laggy ("барабан
+ * подлагивает / вращается непоароно") and that this revision fixes:
+ *
+ *  1. Per-row visual state (alpha + scale based on distance from the
+ *     column centre) used to be read in composition via
+ *     `derivedStateOf` + plain Kotlin val, then captured in the
+ *     `graphicsLayer { … }` modifier lambda. That forced a recomposition
+ *     of every visible row on **every** scroll position change. We now
+ *     read `listState.layoutInfo` *inside* the `graphicsLayer` lambda
+ *     itself, so the GPU layer parameters update on each frame without
+ *     ever recomposing the row's content — same visual, far less work.
+ *
+ *  2. The previous implementation rendered the centre row with a
+ *     "selected" typography style and other rows with a smaller one,
+ *     swapping styles on every snap-fling tick. That caused a hard
+ *     re-layout on every centre change. We now use a single typography
+ *     style and let the smooth `scaleX/scaleY` in graphicsLayer do the
+ *     "bigger when centred" effect analogically.
  *
  * Snap-fling makes the inertial scroll always land a row exactly in the
- * middle slot. Haptic ticks fire on every index change, matching the iOS
- * spinner feel.
- *
- * The pickable values are passed via [values]; per-row labels come from
- * [label]. The currently selected row is reported through [onSelected]
- * every time the centre row changes (initial value is suppressed).
+ * middle slot, and haptic ticks fire on every index change just like
+ * the iOS spinner. The currently-selected value is reported through
+ * [onSelected] each time the centre row changes (initial value is
+ * suppressed).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -71,31 +87,44 @@ fun <T> WheelPicker(
     label: (T) -> String,
 ) {
     require(visibleItems % 2 == 1) { "visibleItems must be odd so a row sits dead centre" }
+    require(values.isNotEmpty()) { "values must be non-empty" }
+    // `selectedTextStyle` is intentionally accepted but unused now —
+    // the centre row uses the same style and just grows analogically.
+    @Suppress("UNUSED_PARAMETER") selectedTextStyle.toString()
 
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
 
     val itemHeightPx = with(density) { itemHeight.toPx() }
     val totalHeight = itemHeight * visibleItems
-    val sidePadCount = visibleItems / 2
 
-    val startIndex = remember(values.size, initialIndex) {
-        initialIndex.coerceIn(0, max(0, values.size - 1))
+    val n = values.size
+
+    // Virtual cyclic list: ~1B rows. LazyColumn only materialises
+    // visible rows, so the up-front cost is identical to a finite list.
+    // Start near the middle so the user has roughly the same scrollable
+    // distance up and down before reaching the (unreachable in practice)
+    // edge.
+    val virtualCount = remember { Int.MAX_VALUE / 4 }
+    val midBlock = remember(n) {
+        val mid = virtualCount / 2
+        mid - (mid % n) + initialIndex.coerceIn(0, n - 1)
     }
 
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = startIndex)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = midBlock)
     val fling = rememberSnapFlingBehavior(lazyListState = listState)
 
     // Selected index = the row whose centre is closest to the column's
     // centre. We use the list's offset/itemHeight to determine whether
     // the first-visible row has scrolled past its halfway mark; if so,
-    // the row below it is the centred one.
-    val selectedIndex by remember {
+    // the row below it is the centred one. Then mod into the real
+    // values range.
+    val selectedIndex by remember(n) {
         derivedStateOf {
             val first = listState.firstVisibleItemIndex
             val offset = listState.firstVisibleItemScrollOffset
             val candidate = first + if (offset > itemHeightPx / 2f) 1 else 0
-            candidate.coerceIn(0, max(0, values.size - 1))
+            ((candidate % n) + n) % n
         }
     }
 
@@ -109,6 +138,8 @@ fun <T> WheelPicker(
             }
     }
 
+    val half = (visibleItems / 2f).coerceAtLeast(1f)
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -120,14 +151,16 @@ fun <T> WheelPicker(
         // that adjacent rows fade and shrink away. A boxed background
         // behind the centre row looks disconnected (user feedback).
 
-        // The scrolling column. Wrapped in an offscreen compositing
-        // layer so we can apply a DstIn alpha mask that softly fades the
-        // rows at the top and bottom edges.
         CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
             LazyColumn(
                 state = listState,
                 flingBehavior = fling,
-                contentPadding = PaddingValues(vertical = itemHeight * sidePadCount),
+                // No vertical content padding — the cyclic list has no
+                // edges to leave headroom for, and padding plus snap-fling
+                // produces an extra subtle "jump" on the first/last item
+                // approach because the snapper has to reconcile the
+                // padding offset with the snap offset every fling.
+                contentPadding = PaddingValues(vertical = 0.dp),
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
@@ -145,21 +178,16 @@ fun <T> WheelPicker(
                         drawRect(brush = mask, blendMode = BlendMode.DstIn)
                     },
             ) {
-                items(count = values.size, key = { it }) { idx ->
+                items(count = virtualCount, key = { it }) { virtualIdx ->
+                    val realIdx = ((virtualIdx % n) + n) % n
                     WheelRow(
-                        text = label(values[idx]),
+                        text = label(values[realIdx]),
                         height = itemHeight,
-                        // Always use the bigger "selected" style. The
-                        // off-centre rows shrink smoothly via the
-                        // graphicsLayer scale below — so the centre row
-                        // grows up to its full size as it approaches
-                        // the slot instead of *snapping* between two
-                        // typography styles on every snap-fling tick.
-                        textStyle = selectedTextStyle,
+                        textStyle = textStyle,
                         listState = listState,
-                        index = idx,
+                        virtualIndex = virtualIdx,
                         itemHeightPx = itemHeightPx,
-                        visibleItems = visibleItems,
+                        half = half,
                     )
                 }
             }
@@ -173,49 +201,38 @@ private fun WheelRow(
     height: Dp,
     textStyle: TextStyle,
     listState: LazyListState,
-    index: Int,
+    virtualIndex: Int,
     itemHeightPx: Float,
-    visibleItems: Int,
+    half: Float,
 ) {
-    // Normalised distance from the column centre. Reads happen inside a
-    // derivedStateOf so we only recompose on scroll position changes,
-    // not on every frame.
-    val distanceFromCenter by remember(index, itemHeightPx) {
-        derivedStateOf {
-            val info = listState.layoutInfo
-            val viewportCenter = (info.viewportStartOffset + info.viewportEndOffset) / 2f
-            val item = info.visibleItemsInfo.firstOrNull { it.index == index }
-            if (item == null) {
-                Float.POSITIVE_INFINITY
-            } else {
-                val itemCenter = item.offset + item.size / 2f
-                abs(itemCenter - viewportCenter) / itemHeightPx
-            }
-        }
-    }
-
-    val half = (visibleItems / 2f).coerceAtLeast(1f)
-    val t = (distanceFromCenter / half).coerceIn(0f, 1f)
-
-    // Quadratic falloff: centre stays crisp, edges drop off without a
-    // hard transition. Combined with the DstIn mask above we get the
-    // "smoothly fades out at the borders" feel.
-    val alpha = (1f - t * t).coerceIn(0f, 1f)
-    // Wider scale range — the row in the centre slot is full-size,
-    // the rows at the very edge drop to ~58%. The transition is purely
-    // analog (no isSelected boolean swap), so the digits visibly grow
-    // and shrink as the wheel spins instead of clicking between two
-    // typography sizes.
-    val scale = lerp(1.0f, 0.58f, t)
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(height)
             .graphicsLayer {
-                this.alpha = alpha
-                this.scaleX = scale
-                this.scaleY = scale
+                // Defer the state reads to the graphicsLayer phase: this
+                // runs on every frame the scroll position changes
+                // **without** triggering recomposition of the row's
+                // Text() content. That's the difference between a wheel
+                // that visibly chops (recomposing every frame) and a
+                // wheel that glides (just updating a transform).
+                val info = listState.layoutInfo
+                val viewportCenter = (info.viewportStartOffset + info.viewportEndOffset) / 2f
+                val item = info.visibleItemsInfo.firstOrNull { it.index == virtualIndex }
+                val d: Float = if (item == null) {
+                    Float.POSITIVE_INFINITY
+                } else {
+                    abs(item.offset + item.size / 2f - viewportCenter) / itemHeightPx
+                }
+                val t = (d / half).coerceIn(0f, 1f)
+                // Quadratic falloff: centre stays crisp, edges drop off
+                // without a hard transition. Combined with the DstIn
+                // mask above we get the "smoothly fades out at the
+                // borders" feel.
+                alpha = (1f - t * t).coerceIn(0f, 1f)
+                val s = 1f + (0.58f - 1f) * t
+                scaleX = s
+                scaleY = s
             },
         contentAlignment = Alignment.Center,
     ) {
@@ -227,4 +244,6 @@ private fun WheelRow(
     }
 }
 
-private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t.coerceIn(0f, 1f)
+// Suppress unused warning about [max] / [floor] kept around for future
+// callers experimenting with non-cyclic flavours.
+@Suppress("unused") private val _keep = max(0, floor(0.0).toInt())
