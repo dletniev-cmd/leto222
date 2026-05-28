@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.wellness.app.ui.components.ColorPickerGrid
 import com.wellness.app.ui.components.FieldLabel
 import com.wellness.app.ui.components.TextInput
 import com.wellness.app.ui.components.TimePickerInline
@@ -172,7 +173,7 @@ private fun TaskStep2(
     WizardIconGrid(selected = icon, tint = color, onSelect = onIconChange)
 
     FieldLabel("Цвет")
-    ColorPaletteGrid(selected = color, onSelect = onColorChange)
+    ColorPickerGrid(colors = AccentPalette, selected = color, onSelect = onColorChange)
 }
 
 private val remindPresets = listOf(0, 5, 10, 15, 30, 60)
