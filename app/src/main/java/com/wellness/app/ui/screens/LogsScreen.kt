@@ -161,7 +161,7 @@ fun LogsScreen(onBack: () -> Unit) {
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             SolarIcon(
-                                name = "copy-bold-duotone",
+                                name = "copy-outline",
                                 tint = Color.White,
                                 size = 18.dp,
                             )

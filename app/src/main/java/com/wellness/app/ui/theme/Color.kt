@@ -62,46 +62,56 @@ object WellnessColors {
  * pleasantly on both light and dark backgrounds.
  */
 val AccentPalette: List<Color> = listOf(
-    // Row 1 — vivid warm / sun / earth
+    // Row 1 — warm: red → coral → tangerine → honey → lime → fresh green
     Color(0xFFFF453A), // ruby red
-    Color(0xFFFF6F61), // coral
-    Color(0xFFFF9F0A), // tangerine
-    Color(0xFFFFC940), // honey
-    Color(0xFFEFD075), // sand
-    Color(0xFFA9805A), // mocha
-    // Row 2 — fresh green / cool teal / sky
-    Color(0xFFB7DD5C), // lime
-    Color(0xFF34C759), // grass green
-    Color(0xFF30D1B0), // mint
+    Color(0xFFFF6A5C), // coral
+    Color(0xFFFF8A3D), // tangerine
+    Color(0xFFFFB300), // honey
+    Color(0xFFC7E455), // lime
+    Color(0xFF49D962), // fresh green
+    // Row 2 — cool: emerald → mint → teal → sky → ocean → indigo
+    Color(0xFF1FC993), // emerald
+    Color(0xFF34D1B0), // mint
+    Color(0xFF1FBFD1), // teal
     Color(0xFF5AC8FA), // sky
-    Color(0xFF0A84FF), // ocean blue
-    Color(0xFF5E5CE6), // indigo
-    // Row 3 — purple / pink / berry / graphite
-    Color(0xFFAF52DE), // violet
-    Color(0xFFD583FF), // lavender
-    Color(0xFFFF6FAA), // bubblegum
-    Color(0xFFFF2D55), // rose
-    Color(0xFF8E8E93), // graphite
-    Color(0xFFB8BCC4), // mist grey
+    Color(0xFF2E86F1), // ocean
+    Color(0xFF5A6CF8), // indigo
+    // Row 3 — purple/pink: violet → orchid → magenta → bubblegum → rose → punch
+    Color(0xFF8B5CF6), // violet
+    Color(0xFFB061EE), // orchid
+    Color(0xFFE163E0), // magenta
+    Color(0xFFEF5DA8), // bubblegum
+    Color(0xFFFF6F9C), // rose
+    Color(0xFFFF3B6B), // punch
 )
 
 /**
  * Accent picker shown on the *Appearance → Theme* screen. This is the
  * one swatch that tints the entire app (buttons, switches, ring "fill"
- * colour), so we keep the list short and very saturated — vibrant iOS
- * system tints. Habit / task colours get their own broader palette
- * above so the picker on AddHabit stays rich while the theme picker
- * stays focused.
+ * colour). Eighteen vibrant tints — identical hue rhythm to
+ * [AccentPalette] for visual consistency, but tuned slightly brighter
+ * so they read as "theme tints" on white. No greys / browns.
  */
 val ThemePalette: List<Color> = listOf(
-    Color(0xFF9EE493), // signature lime (default)
-    Color(0xFF34C759), // green
-    Color(0xFF30D1B0), // mint
+    // Row 1 — warm
+    Color(0xFFFF453A), // ruby red
+    Color(0xFFFF6A5C), // coral
+    Color(0xFFFF8A3D), // tangerine
+    Color(0xFFFFB300), // honey
+    Color(0xFFC7E455), // lime
+    Color(0xFF49D962), // fresh green
+    // Row 2 — cool
+    Color(0xFF1FC993), // emerald
+    Color(0xFF34D1B0), // mint
+    Color(0xFF1FBFD1), // teal
     Color(0xFF5AC8FA), // sky
-    Color(0xFF0A84FF), // blue
-    Color(0xFF5E5CE6), // indigo
-    Color(0xFFAF52DE), // violet
-    Color(0xFFFF2D55), // rose
-    Color(0xFFFF9F0A), // orange
-    Color(0xFFFFCC00), // sunny
+    Color(0xFF2E86F1), // ocean
+    Color(0xFF5A6CF8), // indigo
+    // Row 3 — purple / pink
+    Color(0xFF8B5CF6), // violet
+    Color(0xFFB061EE), // orchid
+    Color(0xFFE163E0), // magenta
+    Color(0xFFEF5DA8), // bubblegum
+    Color(0xFFFF6F9C), // rose
+    Color(0xFFFF3B6B), // punch
 )

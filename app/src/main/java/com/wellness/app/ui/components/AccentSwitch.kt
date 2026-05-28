@@ -15,7 +15,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -47,23 +49,35 @@ fun AccentSwitch(
     val trackOn = Wellness.colors.accent
     val trackColor by animateColorAsState(
         if (checked) trackOn else trackOff,
-        animationSpec = tween(durationMillis = 220),
+        animationSpec = tween(durationMillis = 280),
         label = "switchtrack",
     )
     val offsetX by animateDpAsState(
         if (checked) width - thumbSize - padding else padding,
-        // Underdamped spring with low stiffness — gives a clear sliding
-        // motion (~200 ms) with a tiny overshoot at the end.
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = 240f),
+        // Softer spring — visibly slides ~260 ms with a small overshoot
+        // at the end. R17 lowered stiffness 240→180 because users
+        // reported the previous setting "didn't animate" on the
+        // Notifications screen (the slide was finishing in <100 ms,
+        // basically a snap).
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 180f),
         label = "switchthumb",
     )
-    // Per-toggle "squish" pulse: snapTo(1) then spring-back to 0.
+    // Per-toggle "squish" pulse. We skip the initial composition so
+    // every freshly-opened screen doesn't kick off a phantom pulse on
+    // each switch — the very first call to LaunchedEffect just records
+    // the initial state, and only subsequent toggles trigger the
+    // snapTo(1) → spring-back animation.
     val pulse = remember { Animatable(0f) }
+    var firstComposition by remember { mutableStateOf(true) }
     LaunchedEffect(checked) {
+        if (firstComposition) {
+            firstComposition = false
+            return@LaunchedEffect
+        }
         pulse.snapTo(1f)
         pulse.animateTo(
             targetValue = 0f,
-            animationSpec = spring(dampingRatio = 0.55f, stiffness = 220f),
+            animationSpec = spring(dampingRatio = 0.5f, stiffness = 180f),
         )
     }
     Box(
@@ -78,7 +92,7 @@ fun AccentSwitch(
                 .offset(x = offsetX, y = padding)
                 .size(thumbSize)
                 .graphicsLayer {
-                    val s = 1f + pulse.value * 0.12f
+                    val s = 1f + pulse.value * 0.18f
                     scaleX = s
                     scaleY = 2f - s
                 }

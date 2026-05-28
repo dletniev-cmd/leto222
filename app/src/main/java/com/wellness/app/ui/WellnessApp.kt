@@ -48,6 +48,7 @@ import com.wellness.app.ui.screens.GoalsScreen
 import com.wellness.app.ui.screens.HomeScreen
 import com.wellness.app.ui.screens.LogsScreen
 import com.wellness.app.ui.screens.NotificationsScreen
+import com.wellness.app.ui.screens.OtherScreen
 import com.wellness.app.ui.screens.NutritionScreen
 import com.wellness.app.ui.screens.PlanScreen
 import com.wellness.app.ui.screens.ProfileScreen
@@ -73,6 +74,7 @@ sealed interface AddOverlay {
     data object Notifications : AddOverlay
     data object Bindings : AddOverlay
     data object Tiwi : AddOverlay
+    data object Other : AddOverlay
     data object Logs : AddOverlay
 }
 
@@ -136,7 +138,7 @@ fun WellnessApp() {
                             onNotifications = { overlay = AddOverlay.Notifications },
                             onBindings = { overlay = AddOverlay.Bindings },
                             onTiwi = { overlay = AddOverlay.Tiwi },
-                            onLogs = { overlay = AddOverlay.Logs },
+                            onOther = { overlay = AddOverlay.Other },
                         )
                     }
                 }
@@ -185,6 +187,10 @@ fun WellnessApp() {
                             AddOverlay.Notifications -> NotificationsScreen(onBack = animatedBack)
                             AddOverlay.Bindings -> BindingsScreen(onBack = animatedBack)
                             AddOverlay.Tiwi -> TiwiPlaceholder(onBack = animatedBack)
+                            AddOverlay.Other -> OtherScreen(
+                                onBack = animatedBack,
+                                onLogs = { overlay = AddOverlay.Logs },
+                            )
                             AddOverlay.Logs -> LogsScreen(onBack = animatedBack)
                         }
                     }

@@ -45,7 +45,7 @@ fun ProfileScreen(
     onNotifications: () -> Unit = {},
     onBindings: () -> Unit = {},
     onTiwi: () -> Unit = {},
-    onLogs: () -> Unit = {},
+    onOther: () -> Unit = {},
 ) {
     val state = LocalAppState.current
     ScreenScaffold(topPadding = 0.dp) {
@@ -205,29 +205,20 @@ fun ProfileScreen(
             )
         }
 
-        // "Другое" — secondary actions that don't belong in the main
-        // settings list. Currently only hosts the crash-log viewer that
-        // replaced the launch-time dialog.
-        Box(
-            Modifier
-                .screenHPad()
-                .padding(start = 0.dp, top = 22.dp, bottom = 6.dp),
-        ) {
-            Text(
-                "ДРУГОЕ",
-                color = Wellness.colors.muted,
-                style = Wellness.typography.labelSmall,
-            )
-        }
+        // "Другое" is a single row that opens a sub-screen — keeps the
+        // main settings list short while hiding diagnostic items
+        // (currently just Логи) one tap deeper, like iOS Settings →
+        // General → Other.
+        Box(Modifier.height(18.dp))
         SettingsCard(
             modifier = Modifier.screenHPad(),
             contentPadding = PaddingValues(vertical = 4.dp),
         ) {
             SettingsRow(
-                icon = "document-text-outline",
+                icon = "menu-dots-outline",
                 iconTile = WellnessColors.TileBlue,
-                title = "Логи",
-                onClick = onLogs,
+                title = "Другое",
+                onClick = onOther,
             )
         }
     }

@@ -69,6 +69,7 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.wellness.app.ui.components.ColorPickerGrid
 import com.wellness.app.ui.components.HeaderCheckButton
+import com.wellness.app.ui.components.ProgressRing
 import com.wellness.app.ui.components.OverlayHost
 import com.wellness.app.ui.components.RoundedSlideOverlay
 import com.wellness.app.ui.components.SettingsCard
@@ -228,15 +229,18 @@ private fun HabitRootScreen(
                 },
             )
 
-            // Hero preview — big rounded coloured tile centred above the
-            // name field. Telegram "new folder" style: the user sees
-            // exactly the artwork they're configuring while editing.
-            HabitHeroPreview(
-                name = draft.name,
-                icon = draft.icon,
-                color = draft.color,
-                onChange = { onDraft(draft.copy(name = it)) },
-            )
+            // Hero — the ring+icon badge that the habit shows on the Home
+            // and Plan screens, rendered live above the name field so the
+            // user previews the exact artwork they're configuring.
+            RingHeroPreview(icon = draft.icon, color = draft.color)
+            // Name input — back to a regular full-width text field row
+            // (no centered hero text). Slim Telegram-style container.
+            Box(Modifier.screenHPad().padding(top = 14.dp)) {
+                HabitNameField(
+                    name = draft.name,
+                    onChange = { onDraft(draft.copy(name = it)) },
+                )
+            }
 
             SectionLabel("ПАРАМЕТРЫ", topPad = 22.dp)
             SettingsCard(
@@ -317,11 +321,10 @@ private fun HabitRootScreen(
                 )
             }
 
-            SectionLabel("ЗАМЕТКА", topPad = 22.dp)
-            NoteCard(
-                value = draft.note,
-                onChange = { onDraft(draft.copy(note = it)) },
-            )
+            // The "Заметка" block was removed by request — descriptions live
+            // implicitly in the habit title now. The note field is kept on
+            // the draft model so nothing breaks downstream / on disk; it
+            // just isn't editable from this screen any more.
 
             Spacer(Modifier.height(36.dp))
         }
@@ -433,77 +436,68 @@ private fun SectionLabel(text: String, topPad: androidx.compose.ui.unit.Dp = 16.
 }
 
 /**
- * Centred hero header for the New Habit screen. A 76dp rounded tile in
- * the habit's current colour sits up top with the picked glyph in
- * white; below it is a centred title-style text field for the habit
- * name with a thin underline that fades in/out as the user types. The
- * whole header reads as a live preview of the badge that will land on
- * the Home screen.
+ * Hero preview at the top of the New/Edit Habit screen. Renders the
+ * exact ring-with-icon artwork the user sees on the Plan and Home
+ * screens (full-progress ProgressRing in the habit's colour with the
+ * picked Solar glyph centred inside the ring). Centred horizontally so
+ * the screen reads as "this is the badge you're building" before any
+ * settings rows.
  */
 @Composable
-private fun HabitHeroPreview(
-    name: String,
-    icon: String,
-    color: Color,
-    onChange: (String) -> Unit,
-) {
-    Column(
+private fun RingHeroPreview(icon: String, color: Color) {
+    Box(
         Modifier
             .fillMaxWidth()
-            .padding(top = 14.dp, bottom = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .padding(top = 16.dp, bottom = 4.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        // Big habit tile — visually anchors the screen and previews the
-        // exact icon+colour combo the user is editing.
         Box(
-            Modifier
-                .size(76.dp)
-                .background(color, RoundedCornerShape(22.dp)),
+            Modifier.size(96.dp),
             contentAlignment = Alignment.Center,
         ) {
-            SolarIcon(name = icon, tint = Color.White, size = 40.dp)
+            ProgressRing(
+                progress = 1f,
+                color = color,
+                size = 96.dp,
+                strokeWidth = 6.dp,
+            )
+            SolarIcon(name = icon, tint = color, size = 40.dp)
         }
-        Spacer(Modifier.height(18.dp))
-        // Centred name field. The placeholder layer sits *under* the
-        // BasicTextField so the field stays full-width (the user's tap
-        // anywhere on the row focuses the input) while the placeholder
-        // visually centres the same way the typed text will.
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 28.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (name.isEmpty()) {
-                Text(
-                    "Название привычки",
-                    color = Wellness.colors.muted,
-                    style = Wellness.typography.titleLarge,
-                )
-            }
-            BasicTextField(
-                value = name,
-                onValueChange = onChange,
-                singleLine = true,
-                textStyle = TextStyle(
-                    fontFamily = Manrope,
-                    fontSize = 22.sp,
-                    color = Wellness.colors.text,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                ),
-                cursorBrush = SolidColor(Wellness.colors.accent),
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+    }
+}
+
+/**
+ * Plain Telegram-style title field — full-width container, left-aligned
+ * placeholder, native cursor. Replaces the briefly-shipped centred hero
+ * field which felt too "form header" rather than an input.
+ */
+@Composable
+private fun HabitNameField(name: String, onChange: (String) -> Unit) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .background(Wellness.colors.container, RoundedCornerShape(18.dp))
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+    ) {
+        if (name.isEmpty()) {
+            Text(
+                "Название привычки",
+                color = Wellness.colors.muted,
+                style = Wellness.typography.titleSmall,
             )
         }
-        Spacer(Modifier.height(8.dp))
-        // Hairline below the name. Always rendered so the text field
-        // visually reads as an input even when empty.
-        Box(
-            Modifier
-                .fillMaxWidth(0.55f)
-                .height(1.dp)
-                .background(Wellness.colors.text.copy(alpha = 0.10f)),
+        BasicTextField(
+            value = name,
+            onValueChange = onChange,
+            singleLine = true,
+            textStyle = TextStyle(
+                fontFamily = Manrope,
+                fontSize = 17.sp,
+                color = Wellness.colors.text,
+            ),
+            cursorBrush = SolidColor(Wellness.colors.accent),
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
         )
     }
 }
