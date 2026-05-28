@@ -1,5 +1,11 @@
 package com.wellness.app.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,7 +54,6 @@ import com.wellness.app.ui.components.SettingsCard
 import com.wellness.app.ui.components.SettingsHeader
 import com.wellness.app.ui.components.SettingsRow
 import com.wellness.app.ui.components.SettingsRowDivider
-import com.wellness.app.ui.components.WellnessBottomSheet
 import com.wellness.app.ui.components.WheelPicker
 import com.wellness.app.ui.components.noFeedbackClick
 import com.wellness.app.ui.components.rememberParallaxProgress
@@ -159,7 +164,7 @@ fun AddHabitScreen(onBack: () -> Unit) {
 // ROOT
 // ───────────────────────────────────────────────────────────────────────────
 
-private enum class RootSheet { None, Icon, Color }
+private enum class InlinePanel { None, Icon, Color }
 
 @Composable
 private fun HabitRootScreen(
@@ -171,7 +176,7 @@ private fun HabitRootScreen(
     onCreate: () -> Unit,
 ) {
     val scroll = rememberScrollState()
-    var sheet by remember { mutableStateOf(RootSheet.None) }
+    var panel by remember { mutableStateOf(InlinePanel.None) }
 
     val canCreate = draft.name.trim().isNotEmpty()
 
@@ -216,16 +221,33 @@ private fun HabitRootScreen(
                 )
                 SettingsRowDivider()
 
+                // ── Иконка: row + inline expand panel ───────────────────
                 SettingsRow(
                     icon = "stars-bold-duotone",
                     iconTile = WellnessColors.TilePink,
                     title = "Иконка",
                     showChevron = false,
                     trailing = { MiniIconPreview(icon = draft.icon, color = draft.color) },
-                    onClick = { sheet = RootSheet.Icon },
+                    onClick = {
+                        panel = if (panel == InlinePanel.Icon) InlinePanel.None else InlinePanel.Icon
+                    },
                 )
+                AnimatedVisibility(
+                    visible = panel == InlinePanel.Icon,
+                    enter = expandVertically(animationSpec = tween(220)) + fadeIn(tween(180)),
+                    exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(tween(140)),
+                ) {
+                    InlinePopoverPanel {
+                        IconGrid(
+                            selected = draft.icon,
+                            tint = draft.color,
+                            onSelect = { onDraft(draft.copy(icon = it)) },
+                        )
+                    }
+                }
                 SettingsRowDivider()
 
+                // ── Цвет: row + inline expand panel ─────────────────────
                 SettingsRow(
                     icon = "star-shine-bold-duotone",
                     iconTile = WellnessColors.TileViolet,
@@ -234,8 +256,23 @@ private fun HabitRootScreen(
                     trailing = {
                         Box(Modifier.size(26.dp).background(draft.color, CircleShape))
                     },
-                    onClick = { sheet = RootSheet.Color },
+                    onClick = {
+                        panel = if (panel == InlinePanel.Color) InlinePanel.None else InlinePanel.Color
+                    },
                 )
+                AnimatedVisibility(
+                    visible = panel == InlinePanel.Color,
+                    enter = expandVertically(animationSpec = tween(220)) + fadeIn(tween(180)),
+                    exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(tween(140)),
+                ) {
+                    InlinePopoverPanel {
+                        ColorPickerGrid(
+                            colors = AccentPalette,
+                            selected = draft.color,
+                            onSelect = { onDraft(draft.copy(color = it)) },
+                        )
+                    }
+                }
                 SettingsRowDivider()
 
                 SettingsRow(
@@ -255,34 +292,32 @@ private fun HabitRootScreen(
 
             Spacer(Modifier.height(36.dp))
         }
+    }
+}
 
-        // Bottom sheets — animated in/out with WellnessBottomSheet
-        when (sheet) {
-            RootSheet.Icon -> WellnessBottomSheet(
-                title = "Иконка",
-                onDismiss = { sheet = RootSheet.None },
-                trailingIcon = "check-bold",
-                onTrailing = { /* selection commits on tap; sheet auto-dismisses */ },
-            ) {
-                IconGrid(
-                    selected = draft.icon,
-                    tint = draft.color,
-                    onSelect = { onDraft(draft.copy(icon = it)) },
+/**
+ * The rounded inset surface used for the inline icon/colour panels. Lives
+ * INSIDE the SettingsCard, right below its anchor row, separated by 8 dp
+ * top spacing and a slightly darker tone so it visually reads as a
+ * sub-surface rather than a sibling row.
+ */
+@Composable
+private fun InlinePopoverPanel(content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    color = Wellness.colors.bg.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(16.dp),
                 )
-            }
-            RootSheet.Color -> WellnessBottomSheet(
-                title = "Цвет",
-                onDismiss = { sheet = RootSheet.None },
-                trailingIcon = "check-bold",
-                onTrailing = { /* nothing — colour applied live */ },
-            ) {
-                ColorPickerGrid(
-                    colors = AccentPalette,
-                    selected = draft.color,
-                    onSelect = { onDraft(draft.copy(color = it)) },
-                )
-            }
-            RootSheet.None -> Unit
+                .padding(horizontal = 12.dp, vertical = 14.dp),
+        ) {
+            content()
         }
     }
 }
@@ -384,17 +419,22 @@ private fun NoteCard(value: String, onChange: (String) -> Unit) {
     }
 }
 
-/** 5-column icon grid used inside the icon bottom sheet. */
+/**
+ * 6-column dense icon grid (TG-style). Cells are small monochrome tiles —
+ * the selected one fills with the active colour tint. No tile background
+ * for unselected items to keep the surface visually light, just like the
+ * Telegram folder-icon picker.
+ */
 @Composable
 private fun IconGrid(selected: String, tint: Color, onSelect: (String) -> Unit) {
     val icons = HabitIconCatalog
-    val columns = 5
+    val columns = 6
     val rows = (icons.size + columns - 1) / columns
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         repeat(rows) { r ->
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 repeat(columns) { c ->
                     val idx = r * columns + c
@@ -404,23 +444,22 @@ private fun IconGrid(selected: String, tint: Color, onSelect: (String) -> Unit) 
                         Box(
                             Modifier
                                 .weight(1f)
-                                .height(54.dp)
+                                .height(44.dp)
                                 .background(
-                                    if (active) tint.copy(alpha = 0.22f)
-                                    else Wellness.colors.track,
-                                    RoundedCornerShape(14.dp),
+                                    if (active) tint.copy(alpha = 0.22f) else Color.Transparent,
+                                    RoundedCornerShape(10.dp),
                                 )
                                 .noFeedbackClick { onSelect(ic) },
                             contentAlignment = Alignment.Center,
                         ) {
                             SolarIcon(
                                 name = ic,
-                                tint = if (active) tint else Wellness.colors.text,
-                                size = 24.dp,
+                                tint = if (active) tint else Wellness.colors.muted,
+                                size = 22.dp,
                             )
                         }
                     } else {
-                        Box(Modifier.weight(1f).height(54.dp))
+                        Box(Modifier.weight(1f).height(44.dp))
                     }
                 }
             }

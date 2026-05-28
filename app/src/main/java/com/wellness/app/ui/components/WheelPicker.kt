@@ -115,20 +115,12 @@ fun <T> WheelPicker(
             .height(totalHeight),
         contentAlignment = Alignment.Center,
     ) {
-        // 1. Selected-slot highlight pill — sits behind the digits.
-        // Uses the soft accent (~16 % accent alpha) so it reads as a
-        // gentle tint behind the selected row instead of a bright slab.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(itemHeight + 6.dp)
-                .background(
-                    color = Wellness.colors.accentSoft,
-                    shape = RoundedCornerShape(14.dp),
-                ),
-        )
+        // No selection pill — iOS-style wheel: the centre row reads as
+        // "selected" purely through its larger/bolder type and the fact
+        // that adjacent rows fade and shrink away. A boxed background
+        // behind the centre row looks disconnected (user feedback).
 
-        // 2. The scrolling column. Wrapped in an offscreen compositing
+        // The scrolling column. Wrapped in an offscreen compositing
         // layer so we can apply a DstIn alpha mask that softly fades the
         // rows at the top and bottom edges.
         CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
