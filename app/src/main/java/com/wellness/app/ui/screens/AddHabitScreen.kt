@@ -243,6 +243,9 @@ private fun HabitRootScreen(
             RingHeroShelf(
                 icon = draft.icon,
                 color = draft.color,
+                centreName = draft.name,
+                centreDone = 0,
+                centreTarget = draft.target,
                 onCenterTap = {
                     panel = if (panel == InlinePanel.Icon) InlinePanel.None else InlinePanel.Icon
                 },
@@ -464,43 +467,80 @@ private fun SectionLabel(text: String, topPad: androidx.compose.ui.unit.Dp = 16.
 private fun RingHeroShelf(
     icon: String,
     color: Color,
+    centreName: String,
+    centreDone: Int,
+    centreTarget: Int,
     onCenterTap: () -> Unit,
 ) {
+    // Three-column hero shelf — neighbour preview · live preview ·
+    // neighbour preview. All three columns share the same fixed
+    // [HeroColumnHeight] frame and `Arrangement.Top` so the ring
+    // canvas never jumps vertically when the label below changes
+    // (the previous version centred each column, which made the
+    // ring twitch up/down every time a fixture rolled into a label
+    // with a slightly different ascent/descent).
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(top = 16.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(top = 16.dp, bottom = 4.dp)
+            .height(HeroColumnHeight),
+        verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.Center,
     ) {
-        // Decorative neighbour habits flanking the live preview.
-        // Each side reads as a real "Привычки" tile: ring + name +
-        // "done/target" count below. Every ~5s a new fixture rolls in
-        // and the ring tweens to its new progress fraction.
         NeighbourRing(seed = 0)
         Spacer(Modifier.width(22.dp))
-        // Live centre preview — tappable shortcut into the icon picker.
-        // Filled to 68% so the preview reads as "in progress" instead of
-        // "already done" (a fully-filled ring suggested the new habit
-        // was already complete at creation time).
-        Box(
+        Column(
             Modifier
-                .size(104.dp)
-                .noFeedbackClick { onCenterTap() },
-            contentAlignment = Alignment.Center,
+                .width(124.dp)
+                .height(HeroColumnHeight),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            ProgressRing(
-                progress = 0.68f,
-                color = color,
-                size = 104.dp,
-                strokeWidth = 6.dp,
-            )
-            SolarIcon(name = icon, tint = color, size = 44.dp)
+            Box(
+                Modifier
+                    .size(104.dp)
+                    .noFeedbackClick { onCenterTap() },
+                contentAlignment = Alignment.Center,
+            ) {
+                ProgressRing(
+                    progress = 0.68f,
+                    color = color,
+                    size = 104.dp,
+                    strokeWidth = 6.dp,
+                )
+                SolarIcon(name = icon, tint = color, size = 44.dp)
+            }
+            // Preview labels mirror the side rings so the centre also
+            // reads as a real habit tile (название + 68% прогресс).
+            // Placeholder "Привычка" surfaces while the name field is
+            // empty, then swaps to whatever the user types.
+            Box(
+                Modifier.fillMaxWidth().height(36.dp),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = centreName.ifBlank { "Привычка" },
+                        color = if (centreName.isBlank()) Wellness.colors.muted else Wellness.colors.text,
+                        style = Wellness.typography.labelMedium,
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = "${centreDone} / ${centreTarget}",
+                        color = Wellness.colors.muted,
+                        style = Wellness.typography.labelSmall,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
         Spacer(Modifier.width(22.dp))
         NeighbourRing(seed = 1)
     }
 }
+
+/** Shared height for the hero-row columns (ring 56–104dp + 6dp gap + 36dp label).  */
+private val HeroColumnHeight = 150.dp
 
 /**
  * A decorative "neighbour" habit fixture — what the side rings rotate
@@ -588,8 +628,16 @@ private fun NeighbourRing(seed: Int) {
         label = "neighbour-color",
     )
 
+    // Fixed-size column frame so neither the ring nor the label
+    // jumps when a wider/taller text rolls in. The label sits inside
+    // its own fixed-height Box, the ring inside a fixed-size Box —
+    // Crossfades only swap content, never trigger a layout pass on
+    // the parent Row. That was the "обводка дёргается" cause.
     Column(
-        Modifier.alpha(0.86f).width(72.dp),
+        Modifier
+            .alpha(0.86f)
+            .width(96.dp)
+            .height(HeroColumnHeight),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -615,28 +663,32 @@ private fun NeighbourRing(seed: Int) {
                 SolarIcon(name = name, tint = animatedColor, size = 22.dp)
             }
         }
-        // Habit label — also crossfades when the fixture rolls, so the
-        // name and ring change together instead of one flashing while
-        // the other tweens.
-        androidx.compose.animation.Crossfade(
-            targetState = fixture.name to done to target,
-            animationSpec = androidx.compose.animation.core.tween(280),
-            label = "neighbour-label",
-        ) { (nm, t) ->
-            val (n, d) = nm
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    n,
-                    color = Wellness.colors.text,
-                    style = Wellness.typography.labelMedium,
-                    maxLines = 1,
-                )
-                Text(
-                    "$d / $t",
-                    color = Wellness.colors.muted,
-                    style = Wellness.typography.labelSmall,
-                    maxLines = 1,
-                )
+        // Label block in a fixed-height frame. The Crossfade swaps
+        // name + count together so they never desync, and the frame
+        // height is constant so the canvas above never moves.
+        Box(
+            Modifier.fillMaxWidth().height(36.dp),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            androidx.compose.animation.Crossfade(
+                targetState = Triple(fixture.name, done, target),
+                animationSpec = androidx.compose.animation.core.tween(280),
+                label = "neighbour-label",
+            ) { trip ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        trip.first,
+                        color = Wellness.colors.text,
+                        style = Wellness.typography.labelMedium,
+                        maxLines = 1,
+                    )
+                    Text(
+                        "${trip.second} / ${trip.third}",
+                        color = Wellness.colors.muted,
+                        style = Wellness.typography.labelSmall,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
@@ -839,9 +891,16 @@ private fun IconGrid(selected: String, tint: Color, onSelect: (String) -> Unit) 
                                 .height(cellHeight),
                             contentAlignment = Alignment.Center,
                         ) {
+                            // Inactive glyphs on the dark theme were
+                            // rendering near-invisible because `muted` is a
+                            // very low-contrast token. Use the regular
+                            // text colour at 70% alpha for inactive — the
+                            // grid now reads clearly while the selected
+                            // glyph stays the brightest element via its
+                            // full accent tint.
                             SolarIcon(
                                 name = ic,
-                                tint = if (active) tint else Wellness.colors.muted,
+                                tint = if (active) tint else Wellness.colors.text.copy(alpha = 0.88f),
                                 size = 30.dp,
                             )
                         }
