@@ -2,10 +2,10 @@ package com.wellness.app.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,19 +33,27 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.wellness.app.ui.components.ColorPickerGrid
 import com.wellness.app.ui.components.HeaderCheckButton
 import com.wellness.app.ui.components.OverlayHost
@@ -178,6 +186,16 @@ private fun HabitRootScreen(
     val scroll = rememberScrollState()
     var panel by remember { mutableStateOf(InlinePanel.None) }
 
+    // Width of the rows (so the popovers can match it exactly).
+    var rowWidthPx by remember { mutableStateOf(0) }
+
+    // Dismiss any open popover the moment the user scrolls the screen.
+    LaunchedEffect(Unit) {
+        snapshotFlow { scroll.value }.collect {
+            if (panel != InlinePanel.None) panel = InlinePanel.None
+        }
+    }
+
     val canCreate = draft.name.trim().isNotEmpty()
 
     Box(Modifier.fillMaxSize().background(Wellness.colors.bg)) {
@@ -209,7 +227,9 @@ private fun HabitRootScreen(
 
             SectionLabel("ПАРАМЕТРЫ", topPad = 22.dp)
             SettingsCard(
-                modifier = Modifier.screenHPad(),
+                modifier = Modifier
+                    .screenHPad()
+                    .onGloballyPositioned { rowWidthPx = it.size.width },
                 contentPadding = PaddingValues(vertical = 4.dp),
             ) {
                 SettingsRow(
@@ -221,23 +241,23 @@ private fun HabitRootScreen(
                 )
                 SettingsRowDivider()
 
-                // ── Иконка: row + inline expand panel ───────────────────
-                SettingsRow(
-                    icon = "stars-bold-duotone",
-                    iconTile = WellnessColors.TilePink,
-                    title = "Иконка",
-                    showChevron = false,
-                    trailing = { MiniIconPreview(icon = draft.icon, color = draft.color) },
-                    onClick = {
-                        panel = if (panel == InlinePanel.Icon) InlinePanel.None else InlinePanel.Icon
-                    },
-                )
-                AnimatedVisibility(
-                    visible = panel == InlinePanel.Icon,
-                    enter = expandVertically(animationSpec = tween(220)) + fadeIn(tween(180)),
-                    exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(tween(140)),
-                ) {
-                    InlinePopoverPanel {
+                // ── Иконка: row anchors a floating popover above content ─
+                Box {
+                    SettingsRow(
+                        icon = "stars-bold-duotone",
+                        iconTile = WellnessColors.TilePink,
+                        title = "Иконка",
+                        showChevron = false,
+                        trailing = { MiniIconPreview(icon = draft.icon, color = draft.color) },
+                        onClick = {
+                            panel = if (panel == InlinePanel.Icon) InlinePanel.None else InlinePanel.Icon
+                        },
+                    )
+                    FloatingAnchoredPopover(
+                        visible = panel == InlinePanel.Icon,
+                        widthPx = rowWidthPx,
+                        onDismiss = { panel = InlinePanel.None },
+                    ) {
                         IconGrid(
                             selected = draft.icon,
                             tint = draft.color,
@@ -247,25 +267,25 @@ private fun HabitRootScreen(
                 }
                 SettingsRowDivider()
 
-                // ── Цвет: row + inline expand panel ─────────────────────
-                SettingsRow(
-                    icon = "star-shine-bold-duotone",
-                    iconTile = WellnessColors.TileViolet,
-                    title = "Цвет",
-                    showChevron = false,
-                    trailing = {
-                        Box(Modifier.size(26.dp).background(draft.color, CircleShape))
-                    },
-                    onClick = {
-                        panel = if (panel == InlinePanel.Color) InlinePanel.None else InlinePanel.Color
-                    },
-                )
-                AnimatedVisibility(
-                    visible = panel == InlinePanel.Color,
-                    enter = expandVertically(animationSpec = tween(220)) + fadeIn(tween(180)),
-                    exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(tween(140)),
-                ) {
-                    InlinePopoverPanel {
+                // ── Цвет: floating popover ──────────────────────────────
+                Box {
+                    SettingsRow(
+                        icon = "star-shine-bold-duotone",
+                        iconTile = WellnessColors.TileViolet,
+                        title = "Цвет",
+                        showChevron = false,
+                        trailing = {
+                            Box(Modifier.size(26.dp).background(draft.color, CircleShape))
+                        },
+                        onClick = {
+                            panel = if (panel == InlinePanel.Color) InlinePanel.None else InlinePanel.Color
+                        },
+                    )
+                    FloatingAnchoredPopover(
+                        visible = panel == InlinePanel.Color,
+                        widthPx = rowWidthPx,
+                        onDismiss = { panel = InlinePanel.None },
+                    ) {
                         ColorPickerGrid(
                             colors = AccentPalette,
                             selected = draft.color,
@@ -296,28 +316,66 @@ private fun HabitRootScreen(
 }
 
 /**
- * The rounded inset surface used for the inline icon/colour panels. Lives
- * INSIDE the SettingsCard, right below its anchor row, separated by 8 dp
- * top spacing and a slightly darker tone so it visually reads as a
- * sub-surface rather than a sibling row.
+ * A floating popover that anchors to the BOTTOM-START of its parent layout
+ * (i.e. the row Box it sits inside) and appears in its own window above
+ * everything else — exactly like Telegram's message context menu / folder
+ * icon picker. Tap outside / press back to dismiss.
+ *
+ * - [widthPx]   : the target popover width in pixels (we match the parent
+ *                 SettingsCard width so the panel snaps under the row).
+ * - [visible]   : when this flips false the popup is unmounted; we drive
+ *                 enter animation via a one-shot LaunchedEffect.
+ * - [onDismiss] : called on outside-tap / back press.
  */
 @Composable
-private fun InlinePopoverPanel(content: @Composable () -> Unit) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+private fun FloatingAnchoredPopover(
+    visible: Boolean,
+    widthPx: Int,
+    onDismiss: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    if (!visible || widthPx <= 0) return
+    val density = LocalDensity.current
+    val widthDp = with(density) { widthPx.toDp() }
+
+    Popup(
+        alignment = Alignment.BottomStart,
+        offset = IntOffset(0, with(density) { 8.dp.roundToPx() }),
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(
+            focusable = true,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+        ),
     ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .background(
-                    color = Wellness.colors.bg.copy(alpha = 0.55f),
-                    shape = RoundedCornerShape(16.dp),
-                )
-                .padding(horizontal = 12.dp, vertical = 14.dp),
+        // Enter animation: scale 0.96 → 1, fade 0 → 1. Runs once on mount.
+        var animateIn by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { animateIn = true }
+
+        AnimatedVisibility(
+            visible = animateIn,
+            enter = scaleIn(
+                initialScale = 0.95f,
+                animationSpec = tween(durationMillis = 180),
+            ) + fadeIn(tween(160)),
+            exit = scaleOut(targetScale = 0.96f) + fadeOut(tween(120)),
         ) {
-            content()
+            Box(
+                Modifier
+                    .width(widthDp)
+                    .shadow(
+                        elevation = 22.dp,
+                        shape = RoundedCornerShape(18.dp),
+                        clip = false,
+                    )
+                    .background(
+                        color = Wellness.colors.container,
+                        shape = RoundedCornerShape(18.dp),
+                    )
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
+            ) {
+                content()
+            }
         }
     }
 }
