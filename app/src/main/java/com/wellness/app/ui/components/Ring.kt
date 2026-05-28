@@ -25,6 +25,10 @@ fun ProgressRing(
     size: Dp = 138.dp,
     strokeWidth: Dp = 14.dp,
     @Suppress("UNUSED_PARAMETER") trackColor: Color? = null,
+    // Default disc fill — bumped from 0.18 → 0.30 so rings read as
+    // confident coloured objects on white surfaces instead of barely-
+    // there pastel washes ("выцветшее" в светлой теме).
+    discFillAlpha: Float = 0.30f,
 ) {
     val animated by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
@@ -40,11 +44,13 @@ fun ProgressRing(
         // gentle colour wash so the icon sits in a coloured object instead
         // of a grey donut. No grey track ring — we want a single rounded
         // progress arc on top of the filled disc, nothing more.
-        drawCircle(
-            color = color.copy(alpha = 0.18f),
-            radius = (this.size.width - sw) / 2f,
-            center = Offset(this.size.width / 2f, this.size.height / 2f),
-        )
+        if (discFillAlpha > 0f) {
+            drawCircle(
+                color = color.copy(alpha = discFillAlpha),
+                radius = (this.size.width - sw) / 2f,
+                center = Offset(this.size.width / 2f, this.size.height / 2f),
+            )
+        }
         drawArc(
             color = color,
             startAngle = -90f,

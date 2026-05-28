@@ -151,11 +151,12 @@ private fun ColorDot(color: Color, selected: Boolean, modifier: Modifier = Modif
     // tween for the inner disc and animate the ring's alpha/stroke colour
     // in tandem so the unselected → selected handoff fades rather than
     // pops, even when the finger is sliding fast across the grid.
-    // Smaller, breezier circles — unselected discs fill ~82% of the slot
-    // (leaving real spacing between adjacent dots), selected ones shrink
-    // further to ~62% so the stroked ring sits clearly around them.
+    // Telegram-style colour pip: unselected dot fills ~84% of the slot
+    // (solid colour, no transparency anywhere), selected dot shrinks
+    // noticeably down to ~54% so a clearly visible gap opens up between
+    // the disc and the stroked ring around it.
     val innerFraction by animateFloatAsState(
-        targetValue = if (selected) 0.62f else 0.82f,
+        targetValue = if (selected) 0.54f else 0.84f,
         animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
         label = "colorinner",
     )
@@ -175,11 +176,11 @@ private fun ColorDot(color: Color, selected: Boolean, modifier: Modifier = Modif
             .drawBehind {
                 if (ringAlpha > 0f) {
                     val sw = 2.dp.toPx()
-                    // Match the new smaller disc footprint: the selection
-                    // ring hugs ~78% of the slot (just slightly larger than
-                    // the unselected disc) so it reads as "the ring grew
-                    // out of the disc" rather than a wide frame.
-                    val ringRadius = (this.size.minDimension * 0.78f - sw) / 2f
+                    // Selection ring sits at the unselected-disc footprint
+                    // (~84% of the slot) — when a dot is picked, the disc
+                    // shrinks to 54% and the ring stays large, opening a
+                    // wide, clearly visible gap between them.
+                    val ringRadius = (this.size.minDimension * 0.84f - sw) / 2f
                     drawCircle(
                         color = color.copy(alpha = ringAlpha),
                         radius = ringRadius,

@@ -43,17 +43,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.wellness.app.ui.components.ColorPickerGrid
 import com.wellness.app.ui.components.HeaderCheckButton
@@ -349,9 +353,30 @@ private fun FloatingAnchoredPopover(
     val mounted = transition.currentState || transition.targetState
     if (!mounted) return
 
+    // Custom provider: anchor the TOP-LEFT of the popup to the
+    // BOTTOM-LEFT of the row + a 6dp gap, so the popover hangs cleanly
+    // straight under the tapped row instead of stacking above it (which
+    // is what Alignment.BottomStart did — that one aligns the popup's
+    // BOTTOM to the anchor's BOTTOM, which is why it used to creep up
+    // the screen on a tall popup).
+    val gapPx = with(density) { 6.dp.roundToPx() }
+    val provider = remember(gapPx) {
+        object : PopupPositionProvider {
+            override fun calculatePosition(
+                anchorBounds: IntRect,
+                windowSize: IntSize,
+                layoutDirection: LayoutDirection,
+                popupContentSize: IntSize,
+            ): IntOffset {
+                val x = anchorBounds.left
+                val y = anchorBounds.bottom + gapPx
+                return IntOffset(x, y)
+            }
+        }
+    }
+
     Popup(
-        alignment = Alignment.BottomStart,
-        offset = IntOffset(0, with(density) { 6.dp.roundToPx() }),
+        popupPositionProvider = provider,
         onDismissRequest = onDismiss,
         properties = PopupProperties(
             focusable = true,
@@ -362,22 +387,21 @@ private fun FloatingAnchoredPopover(
         AnimatedVisibility(
             visibleState = transition,
             enter = scaleIn(
-                initialScale = 0.94f,
-                animationSpec = tween(durationMillis = 200),
+                initialScale = 0.86f,
+                animationSpec = tween(durationMillis = 220),
+                // Grow out of the row above — origin at top-center of the
+                // popup, i.e. directly under the centre of the anchor.
+                transformOrigin = TransformOrigin(0.5f, 0f),
             ) + fadeIn(tween(180)),
             exit = scaleOut(
-                targetScale = 0.94f,
-                animationSpec = tween(durationMillis = 170),
+                targetScale = 0.86f,
+                animationSpec = tween(durationMillis = 180),
+                transformOrigin = TransformOrigin(0.5f, 0f),
             ) + fadeOut(tween(150)),
         ) {
             Box(
                 Modifier
                     .width(widthDp)
-                    .shadow(
-                        elevation = 22.dp,
-                        shape = RoundedCornerShape(20.dp),
-                        clip = false,
-                    )
                     .background(
                         color = Wellness.colors.container,
                         shape = RoundedCornerShape(20.dp),
@@ -509,21 +533,21 @@ private fun IconGrid(selected: String, tint: Color, onSelect: (String) -> Unit) 
                     if (idx < icons.size) {
                         val ic = icons[idx]
                         val active = ic == selected
+                        // No background tile — selection is shown only by
+                        // tinting the icon glyph itself in the accent
+                        // colour. Everything else stays as a neutral
+                        // muted glyph, like a Telegram emoji panel.
                         Box(
                             Modifier
                                 .weight(1f)
                                 .height(44.dp)
-                                .background(
-                                    if (active) tint.copy(alpha = 0.22f) else Color.Transparent,
-                                    RoundedCornerShape(10.dp),
-                                )
                                 .noFeedbackClick { onSelect(ic) },
                             contentAlignment = Alignment.Center,
                         ) {
                             SolarIcon(
                                 name = ic,
                                 tint = if (active) tint else Wellness.colors.muted,
-                                size = 22.dp,
+                                size = 24.dp,
                             )
                         }
                     } else {

@@ -297,35 +297,41 @@ private fun HabitRow(h: Habit, dateKey: String, onTap: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         NoFeedbackButton(onClick = onTap, modifier = Modifier.size(28.dp)) {
-            // Ring + fill — fills as progress reaches target, becomes a solid
-            // tick when done. For target=1 it's effectively a binary checkbox.
+            // Solid coloured disc, no transparency. While not started it's
+            // an empty disc; once done it carries a white check; partial
+            // progress is shown as a thin white inner-arc on top of the
+            // solid disc — keeps the row reading as a clean coloured
+            // checkbox rather than a washed-out donut.
             Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
-                ProgressRing(
-                    progress = if (done) 1f else ringFraction,
-                    color = if (done) h.color else h.color.copy(alpha = 0.85f),
-                    size = 28.dp,
-                    strokeWidth = 3.dp,
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .background(h.color, RoundedCornerShape(999.dp)),
                 )
                 if (done) {
-                    Box(
-                        Modifier
-                            .size(16.dp)
-                            .background(h.color, RoundedCornerShape(999.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        SolarIcon(name = "check-read-bold", tint = Color(0xFF0C1F12), size = 10.dp)
-                    }
+                    SolarIcon(name = "check-read-bold", tint = Color.White, size = 16.dp)
+                } else if (ringFraction > 0f && h.target > 1) {
+                    ProgressRing(
+                        progress = ringFraction,
+                        color = Color.White,
+                        size = 22.dp,
+                        strokeWidth = 2.5.dp,
+                        discFillAlpha = 0f,
+                    )
                 }
             }
         }
         Box(Modifier.width(12.dp))
+        // Telegram-style solid coloured tile with a white glyph — same
+        // visual language as the settings rows on AddHabit so the home
+        // list and the editor stay coherent.
         Box(
             Modifier
                 .size(34.dp)
-                .background(h.color.copy(alpha = 0.16f), RoundedCornerShape(11.dp)),
+                .background(h.color, RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            SolarIcon(name = h.icon, tint = h.color, size = 18.dp)
+            SolarIcon(name = h.icon, tint = Color.White, size = 20.dp)
         }
         Box(Modifier.width(12.dp))
         Text(

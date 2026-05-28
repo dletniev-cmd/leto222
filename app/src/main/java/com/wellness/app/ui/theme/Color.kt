@@ -13,7 +13,11 @@ object WellnessColors {
     val DarkText = Color(0xFFF4F4F5)
     val LightText = Color(0xFF18181B)
     val MutedDark = Color(0xFF8A8A92)
-    val MutedLight = Color(0xFF8A8A92)
+    // Darker muted in light theme — the previous #8A8A92 sat too low in
+    // contrast on a white surface and made captions / chevrons look
+    // washed out. #6B6B73 reads as a confident secondary tone while
+    // staying clearly subordinate to the body text #18181B.
+    val MutedLight = Color(0xFF6B6B73)
 
     // Tracks (ring background / progress track)
     val TrackDark = Color(0x14FFFFFF)
@@ -78,5 +82,6 @@ val AccentPalette: List<Color> = listOf(
     Color(0xFFC58FE6), // rose lilac
     Color(0xFF8FA0B3), // slate
     Color(0xFFA89B7F), // sand
-    Color(0xFFE8E8EC), // mist
+    Color(0xFFB8BCC4), // soft graphite
+
 )
