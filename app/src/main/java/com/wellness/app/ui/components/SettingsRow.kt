@@ -32,6 +32,7 @@ fun SettingsRow(
     icon: String,
     iconTile: Color,
     title: String,
+    iconTint: Color = Color.White,
     value: String? = null,
     showChevron: Boolean = true,
     trailing: (@Composable () -> Unit)? = null,
@@ -48,7 +49,7 @@ fun SettingsRow(
                 .background(iconTile, RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            SolarIcon(name = icon, tint = Color.White, size = 21.dp)
+            SolarIcon(name = icon, tint = iconTint, size = 21.dp)
         }
         Box(Modifier.width(14.dp))
         Text(

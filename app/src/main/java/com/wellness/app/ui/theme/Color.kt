@@ -49,6 +49,14 @@ object WellnessColors {
     val TilePink = Color(0xFFFF6E97)
     val TileLemon = Color(0xFFEEC53A)
 
+    // Softer accent-toned variants used for "ПЕРИОД" rows where the
+    // saturated TileLemon / TileSky read as visually loud against the
+    // rest of the screen. These are paired with `iconTint = accent`
+    // (not white) and a low-alpha tile fill, so the row reads as a
+    // muted glyph chip instead of a brash colour chip.
+    val AccentAmber = Color(0xFFFFA94D)
+    val AccentTeal = Color(0xFF3DBFA8)
+
     // Brand blue used as the Telegram tile fill — close to the gradient
     // mid-tone of the official Telegram round-logo so the binding entry
     // reads as "Telegram" at a glance.

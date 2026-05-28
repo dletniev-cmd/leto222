@@ -473,12 +473,16 @@ private fun RingHeroShelf(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        // Lively neighbour — left: cycles icon+colour every ~5s and the
-        // ring smoothly fills 0→1 on a 4s loop, so the screen reads as
-        // a tiny live demo of how the user's other habits behave.
-        NeighbourRing(seed = 0, animationOffsetMs = 0)
+        // Decorative neighbour habits flanking the live preview.
+        // Each side reads as a real "Привычки" tile: ring + name +
+        // "done/target" count below. Every ~5s a new fixture rolls in
+        // and the ring tweens to its new progress fraction.
+        NeighbourRing(seed = 0)
         Spacer(Modifier.width(22.dp))
         // Live centre preview — tappable shortcut into the icon picker.
+        // Filled to 68% so the preview reads as "in progress" instead of
+        // "already done" (a fully-filled ring suggested the new habit
+        // was already complete at creation time).
         Box(
             Modifier
                 .size(104.dp)
@@ -486,7 +490,7 @@ private fun RingHeroShelf(
             contentAlignment = Alignment.Center,
         ) {
             ProgressRing(
-                progress = 1f,
+                progress = 0.68f,
                 color = color,
                 size = 104.dp,
                 strokeWidth = 6.dp,
@@ -494,112 +498,146 @@ private fun RingHeroShelf(
             SolarIcon(name = icon, tint = color, size = 44.dp)
         }
         Spacer(Modifier.width(22.dp))
-        NeighbourRing(seed = 1, animationOffsetMs = 1700)
+        NeighbourRing(seed = 1)
     }
 }
 
 /**
- * Pool of duotone Solar glyphs used for the decorative side rings. All
- * names are present in `app/src/main/assets/icons` — keep this list
- * trimmed to icons that actually ship in the APK to avoid blank rings
- * if the SVG loader misses (which currently falls back to nothing).
+ * A decorative "neighbour" habit fixture — what the side rings rotate
+ * through to give the impression of other real habits in the user's
+ * list while they configure this one. Each fixture has a label that
+ * matches the glyph (a dumbbell ring is called "Тренировка", not a
+ * random word), and a small pool of done/target pairs that read as
+ * plausible day-to-day progress.
  */
-private val NeighbourIcons: List<String> = listOf(
-    "dumbbell-bold-duotone",
-    "running-bold-duotone",
-    "cup-hot-bold-duotone",
-    "bicycling-bold-duotone",
-    "heart-pulse-bold-duotone",
-    "bonfire-bold-duotone",
-    "chef-hat-bold-duotone",
-    "book-bookmark-bold-duotone",
-    "moon-bold-duotone",
-    "leaf-bold-duotone",
-    "alarm-bold-duotone",
-    "bath-bold-duotone",
-    "fire-bold-duotone",
-    "basketball-bold-duotone",
+private data class HabitFixture(
+    val icon: String,
+    val name: String,
+    val presets: List<Pair<Int, Int>>, // done, target
+)
+
+private val NeighbourFixtures: List<HabitFixture> = listOf(
+    HabitFixture("dumbbell-bold-duotone",       "Тренировка", listOf(1 to 3, 2 to 3, 3 to 3)),
+    HabitFixture("running-bold-duotone",        "Бег",        listOf(2 to 5, 3 to 5, 5 to 5)),
+    HabitFixture("cup-hot-bold-duotone",        "Кофе",       listOf(1 to 2, 2 to 2)),
+    HabitFixture("bicycling-bold-duotone",      "Велосипед",  listOf(1 to 4, 2 to 4, 3 to 4)),
+    HabitFixture("heart-pulse-bold-duotone",    "Кардио",     listOf(2 to 4, 3 to 4)),
+    HabitFixture("bonfire-bold-duotone",        "Сжечь ккал", listOf(150 to 400, 250 to 400, 350 to 400)),
+    HabitFixture("chef-hat-bold-duotone",       "Готовить",   listOf(1 to 2, 2 to 2)),
+    HabitFixture("book-bookmark-bold-duotone",  "Чтение",     listOf(10 to 30, 20 to 30)),
+    HabitFixture("moon-bold-duotone",           "Сон 8 ч",    listOf(6 to 8, 7 to 8, 8 to 8)),
+    HabitFixture("leaf-bold-duotone",           "Медитация",  listOf(5 to 10, 8 to 10)),
+    HabitFixture("alarm-bold-duotone",          "Подъём",     listOf(1 to 1)),
+    HabitFixture("bath-bold-duotone",           "Душ",        listOf(1 to 2, 2 to 2)),
+    HabitFixture("fire-bold-duotone",           "Серия",      listOf(4 to 7, 5 to 7, 6 to 7)),
+    HabitFixture("basketball-bold-duotone",     "Баскет",     listOf(1 to 3, 2 to 3)),
 )
 
 /**
  * One of the two decorative side rings flanking the hero preview.
  *
- * Every ~5 seconds the icon and colour are re-rolled from the live
- * accent palette (deduped against the current value so we never roll
- * the same one in a row). The colour swap goes through
- * [animateColorAsState] for a smooth tween instead of a hard cut.
+ * Every ~5 seconds a new fixture (icon + matching name + plausible
+ * done/target) and a fresh accent colour are rolled in. The ring
+ * progress tweens smoothly from the previous fraction to the new one
+ * (handled inside [ProgressRing] via animateFloatAsState), the colour
+ * crossfades, and the icon does a soft 250ms dissolve.
  *
- * The ring itself fills from 0 → 1 over 4 seconds on a continuous
- * infinite loop — easing makes the first chunk feel decisive and the
- * last chunk feel like it's "settling", same as a habit ticking off
- * its target. After the fill the cycle restarts so the rings always
- * read as alive even when the user is just thinking about the name.
+ * Important: the ring never cycles back to 0 in the middle of the
+ * dwell. The previous "0 → 1 infinite loop" version left a tiny
+ * rounded-cap dot at the start angle each time it crossed zero — that
+ * was the "осталась какая-та точка" the user reported. Holding a
+ * non-zero fraction (~0.16+) the whole time means the rounded cap of
+ * the arc is always overlapping the start cap visibly so there's no
+ * stray pixel.
  *
- * @param seed initial pick offset, so the two flanking rings don't
- *   show the same icon at the same moment.
- * @param animationOffsetMs phase shift for the fill loop, again so the
- *   left/right rings aren't perfectly synchronised.
+ * @param seed phase offset, so the left/right rings don't switch in
+ *   lockstep.
  */
 @Composable
-private fun NeighbourRing(seed: Int, animationOffsetMs: Int) {
+private fun NeighbourRing(seed: Int) {
     val palette = AccentPalette
-    var iconIdx by remember { mutableStateOf((seed * 7) % NeighbourIcons.size) }
+    var fixtureIdx by remember { mutableStateOf((seed * 7) % NeighbourFixtures.size) }
+    var presetIdx by remember { mutableStateOf(0) }
     var colorIdx by remember { mutableStateOf((seed * 5) % palette.size) }
 
     LaunchedEffect(seed) {
-        // Initial dwell, then continuously roll fresh pairs.
         kotlinx.coroutines.delay(5000L + seed * 400L)
         while (true) {
-            var ni: Int
-            do { ni = kotlin.random.Random.nextInt(NeighbourIcons.size) } while (ni == iconIdx)
+            var nf: Int
+            do { nf = kotlin.random.Random.nextInt(NeighbourFixtures.size) } while (nf == fixtureIdx)
             var nc: Int
             do { nc = kotlin.random.Random.nextInt(palette.size) } while (nc == colorIdx)
-            iconIdx = ni
+            fixtureIdx = nf
             colorIdx = nc
+            presetIdx = kotlin.random.Random.nextInt(NeighbourFixtures[nf].presets.size)
             kotlinx.coroutines.delay(5000L)
         }
     }
 
+    val fixture = NeighbourFixtures[fixtureIdx]
+    val (done, target) = fixture.presets[presetIdx.coerceIn(0, fixture.presets.lastIndex)]
+    val progressTarget = (done.toFloat() / target.toFloat()).coerceIn(0.16f, 1f)
+
     val targetColor = palette[colorIdx]
     val animatedColor by androidx.compose.animation.animateColorAsState(
         targetValue = targetColor,
-        animationSpec = androidx.compose.animation.core.tween(durationMillis = 700, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = 700,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing,
+        ),
         label = "neighbour-color",
     )
 
-    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "neighbour-progress")
-    val progress by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = androidx.compose.animation.core.tween(
-                durationMillis = 4000,
-                delayMillis = animationOffsetMs,
-                easing = androidx.compose.animation.core.FastOutSlowInEasing,
-            ),
-            repeatMode = androidx.compose.animation.core.RepeatMode.Restart,
-        ),
-        label = "p",
-    )
-
-    Box(
-        Modifier.size(56.dp).alpha(0.78f),
-        contentAlignment = Alignment.Center,
+    Column(
+        Modifier.alpha(0.86f).width(72.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        ProgressRing(
-            progress = progress,
-            color = animatedColor,
-            size = 56.dp,
-            strokeWidth = 4.dp,
-        )
-        // Crossfade swaps the glyph on a soft 250ms dissolve when the
-        // 5-second timer fires, instead of a hard texture swap.
+        Box(
+            Modifier.size(56.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            ProgressRing(
+                // ProgressRing has its own 700ms internal tween on this
+                // value — passing the target fraction here is what
+                // produces the "плавно появляется" feel the user asked
+                // for, without any external infinite-transition jank.
+                progress = progressTarget,
+                color = animatedColor,
+                size = 56.dp,
+                strokeWidth = 4.dp,
+            )
+            androidx.compose.animation.Crossfade(
+                targetState = fixture.icon,
+                animationSpec = androidx.compose.animation.core.tween(280),
+                label = "neighbour-icon",
+            ) { name ->
+                SolarIcon(name = name, tint = animatedColor, size = 22.dp)
+            }
+        }
+        // Habit label — also crossfades when the fixture rolls, so the
+        // name and ring change together instead of one flashing while
+        // the other tweens.
         androidx.compose.animation.Crossfade(
-            targetState = NeighbourIcons[iconIdx],
-            animationSpec = androidx.compose.animation.core.tween(250),
-            label = "neighbour-icon",
-        ) { name ->
-            SolarIcon(name = name, tint = animatedColor, size = 22.dp)
+            targetState = fixture.name to done to target,
+            animationSpec = androidx.compose.animation.core.tween(280),
+            label = "neighbour-label",
+        ) { (nm, t) ->
+            val (n, d) = nm
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    n,
+                    color = Wellness.colors.text,
+                    style = Wellness.typography.labelMedium,
+                    maxLines = 1,
+                )
+                Text(
+                    "$d / $t",
+                    color = Wellness.colors.muted,
+                    style = Wellness.typography.labelSmall,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -866,67 +904,93 @@ private fun HabitGoalSubScreen(draft: HabitDraft, onDraft: (HabitDraft) -> Unit,
                 trailing = { HeaderCheckButton(onClick = onBack) },
             )
 
-            // ── Wheel (number) + unit label ──────────────────────────────
-            // Goal is always quantitative — "Просто факт" mode was removed.
-            Row(
+            // ── Side-by-side wheels: amount + unit ───────────────────────
+            // Removed the surrounding container — the user found it
+            // "огромной" against the bg. The two wheels now float
+            // directly on the screen background with a single subtle
+            // centre-row pill underneath both, so the selected pair
+            // (e.g. "3 — стак.") reads as a single coherent goal.
+            //
+            // Wheels share `visibleItems = 5` and `itemHeight = 38.dp`
+            // — the shorter row keeps the overall height down to ~190dp
+            // total (vs the old ~280dp container).
+            val wheelItemHeight = 38.dp
+            val wheelVisible = 5
+            // Both wheels are cyclic, so the unit ("раз / стак / мл …")
+            // also loops continuously instead of being a stacked column
+            // of chips.
+            val initialUnitIdx = UnitPresets.indexOf(draft.unit).let {
+                if (it >= 0) it else 0
+            }
+            Box(
                 Modifier
                     .screenHPad()
                     .fillMaxWidth()
-                    .background(Wellness.colors.container, RoundedCornerShape(22.dp))
-                    .padding(vertical = 12.dp, horizontal = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
+                    .padding(top = 8.dp, bottom = 4.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                WheelPicker(
-                    values = TargetValues,
-                    initialIndex = (draft.target - 1).coerceIn(0, TargetValues.lastIndex),
-                    modifier = Modifier.weight(2f),
-                    visibleItems = 5,
-                    onSelected = { _, v -> onDraft(draft.copy(target = v)) },
-                    label = { it.toString() },
+                // Faint centre-row pill, sized to one wheel-row, that
+                // sits behind both wheels and unites them visually
+                // without re-introducing the boxed container.
+                Box(
+                    Modifier
+                        .height(wheelItemHeight + 4.dp)
+                        .fillMaxWidth(0.86f)
+                        .background(
+                            Wellness.colors.track.copy(alpha = 0.35f),
+                            RoundedCornerShape(14.dp),
+                        ),
                 )
-                Spacer(Modifier.width(14.dp))
-                Text(
-                    draft.unit.ifBlank { "раз" },
-                    color = Wellness.colors.muted,
-                    style = Wellness.typography.titleMedium,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 4.dp),
-                )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    WheelPicker(
+                        values = TargetValues,
+                        initialIndex = (draft.target - 1).coerceIn(0, TargetValues.lastIndex),
+                        modifier = Modifier.weight(1f),
+                        visibleItems = wheelVisible,
+                        itemHeight = wheelItemHeight,
+                        onSelected = { _, v -> onDraft(draft.copy(target = v)) },
+                        label = { it.toString() },
+                    )
+                    WheelPicker(
+                        values = UnitPresets,
+                        initialIndex = initialUnitIdx,
+                        modifier = Modifier.weight(1f),
+                        visibleItems = wheelVisible,
+                        itemHeight = wheelItemHeight,
+                        onSelected = { _, v -> onDraft(draft.copy(unit = v)) },
+                        label = { it },
+                    )
+                }
             }
 
-            run {
-                SectionLabel("ЕДИНИЦА ИЗМЕРЕНИЯ", topPad = 22.dp)
-                Column(Modifier.screenHPad()) {
-                    ChipWrap(
-                        options = UnitPresets,
-                        selected = draft.unit,
-                        onSelect = { onDraft(draft.copy(unit = it)) },
-                    )
-                }
-
-                SectionLabel("ПЕРИОД", topPad = 22.dp)
-                SettingsCard(
-                    modifier = Modifier.screenHPad(),
-                    contentPadding = PaddingValues(vertical = 4.dp),
-                ) {
-                    PeriodRow(
-                        icon = "sun-bold-duotone",
-                        tile = WellnessColors.TileLemon,
-                        title = "За день",
-                        selected = draft.period == GoalPeriod.Day,
-                        onClick = { onDraft(draft.copy(period = GoalPeriod.Day)) },
-                    )
-                    SettingsRowDivider()
-                    PeriodRow(
-                        icon = "calendar-bold-duotone",
-                        tile = WellnessColors.TileSky,
-                        title = "За неделю",
-                        selected = draft.period == GoalPeriod.Week,
-                        onClick = { onDraft(draft.copy(period = GoalPeriod.Week)) },
-                    )
-                }
+            SectionLabel("ПЕРИОД", topPad = 18.dp)
+            SettingsCard(
+                modifier = Modifier.screenHPad(),
+                contentPadding = PaddingValues(vertical = 4.dp),
+            ) {
+                // Soft accent-tinted tiles instead of the saturated
+                // lemon / sky from the previous iteration — those felt
+                // "неприятные" against the rest of the screen.
+                PeriodRow(
+                    icon = "sun-bold-duotone",
+                    tile = WellnessColors.AccentAmber.copy(alpha = 0.18f),
+                    iconTint = WellnessColors.AccentAmber,
+                    title = "За день",
+                    selected = draft.period == GoalPeriod.Day,
+                    onClick = { onDraft(draft.copy(period = GoalPeriod.Day)) },
+                )
+                SettingsRowDivider()
+                PeriodRow(
+                    icon = "calendar-bold-duotone",
+                    tile = WellnessColors.AccentTeal.copy(alpha = 0.18f),
+                    iconTint = WellnessColors.AccentTeal,
+                    title = "За неделю",
+                    selected = draft.period == GoalPeriod.Week,
+                    onClick = { onDraft(draft.copy(period = GoalPeriod.Week)) },
+                )
             }
 
             Spacer(Modifier.height(36.dp))
@@ -956,10 +1020,18 @@ private fun RowScope.SegItem(label: String, active: Boolean, onClick: () -> Unit
 }
 
 @Composable
-private fun PeriodRow(icon: String, tile: Color, title: String, selected: Boolean, onClick: () -> Unit) {
+private fun PeriodRow(
+    icon: String,
+    tile: Color,
+    iconTint: Color = Color.White,
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     SettingsRow(
         icon = icon,
         iconTile = tile,
+        iconTint = iconTint,
         title = title,
         showChevron = false,
         trailing = {

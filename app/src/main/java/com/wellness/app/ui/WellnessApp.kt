@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -129,6 +130,17 @@ fun WellnessApp() {
     val push: (AddOverlay) -> Unit = { o -> overlayStack = overlayStack + o; lastAction = "push" }
     val pop: () -> Unit = { overlayStack = overlayStack.dropLast(1); lastAction = "pop" }
     val parallax = rememberParallaxProgress()
+    // Sink for nested overlays. When the stack is >= 2 levels deep the
+    // active top RoundedSlideOverlay must NOT drive the host parallax,
+    // because the underlay (Other under Logs) is rendered as a fully
+    // opaque sibling above the home tab. If the new Logs RSO mirrored
+    // its dismissProgress=1 starting value into the real parallax, the
+    // navbar (whose alpha = parallax) would flash to 1 for one frame
+    // every time the user opens a nested screen — that's the wrong
+    // entry animation the user reported for Logs from Другое. The
+    // dummy sink absorbs the mirror writes so nested entry/exit reads
+    // exactly like a normal slide-in over the parent.
+    val dummyParallax = remember { mutableFloatStateOf(0f) }
 
     Box(Modifier.fillMaxSize().background(Wellness.colors.bg)) {
         OverlayHost(parallaxProgress = parallax) {
@@ -221,9 +233,10 @@ fun WellnessApp() {
                 // and re-running the slide-in would look like the new
                 // top "appears" from the right one extra time.
                 val animateInTop = lastAction != "pop"
+                val topParallax = if (overlayStack.size >= 2) dummyParallax else parallax
                 key(current, animateInTop) {
                     RoundedSlideOverlay(
-                        parallaxProgress = parallax,
+                        parallaxProgress = topParallax,
                         onDismissed = { pop() },
                         animateIn = animateInTop,
                     ) { animatedBack ->
