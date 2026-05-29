@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -26,7 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -43,18 +43,15 @@ import com.wellness.app.ui.state.LocalAppState
 import com.wellness.app.ui.state.Tab
 import com.wellness.app.ui.theme.Wellness
 import com.wellness.app.ui.theme.WellnessColors
-import dev.chrisbanes.haze.HazeDefaults
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import dev.chrisbanes.haze.hazeChild
 
 /**
  * One icon per tab — the SAME asset is used in both active and inactive
  * state; only the tint changes (with a soft cross-fade).
  *
  * For the Profile tab we don't render a glyph at all: the slot shows a
- * 26 dp circular avatar (Telegram photo when bound, otherwise a gradient
- * disc with the first letter of the user's name as fallback).
+ * 28 dp circular avatar (Telegram photo when bound, otherwise a gradient
+ * disc with the first letter of the user's name as fallback) — same
+ * pattern as the reference island-nav.
  */
 fun tabIcon(tab: Tab): String = when (tab) {
     Tab.Home -> "home-2-bold-duotone"
@@ -73,48 +70,43 @@ fun tabTitle(tab: Tab): String = when (tab) {
     Tab.Profile -> "Профиль"
 }
 
-// === Geometry ===
-// Adapted from the reference island-nav (52×44, padding 10/8). Pulled
-// in for the 5-button row so the pills sit closer together: button
-// 48×40, padding 8/6, container radius 26, pill radius 18. Bottom
-// safe-area gap 14 dp (down from 20 dp) — bar sits a touch closer
-// to the gesture edge.
-private val ButtonWidth = 48.dp
-private val ButtonHeight = 40.dp
+// === Geometry copied 1:1 from the reference island-nav ===
+// Buttons: 52 × 44, rounded 20. Gap 4. Container padding 10/8, radius 28.
+// Pill move: 320 ms with Cubic(.32, .72, .00, 1).
+// Pill squash on tap: parabolic scaleX 1.0 → 1.12 → 1.0 over 320 ms
+// (Y stays 1 — icons themselves do NOT move/scale, per user feedback).
+private val ButtonWidth = 52.dp
+private val ButtonHeight = 44.dp
 private val NavGap = 4.dp
-private val NavPadH = 8.dp
-private val NavPadV = 6.dp
-private val NavCornerRadius = 26.dp
-private val PillCornerRadius = 18.dp
+private val NavPadH = 10.dp
+private val NavPadV = 8.dp
+private val NavCornerRadius = 28.dp
+private val PillCornerRadius = 20.dp
 
-// Same easing curve as the reference island-nav for the pill motion
+// Same easing curve as the reference island-nav for both pill motion
 // and squash recovery — gentle ease-out, no overshoot, no bounce.
-// r36: bumped 320 → 420 ms — pill glides a touch slower so the warm
-// glow has time to register; still feels snappy on tap.
 private val NavEasing = CubicBezierEasing(0.32f, 0.72f, 0.0f, 1.0f)
-private const val NavMoveMs = 420
+private const val NavMoveMs = 320
 
 @Composable
-fun Navbar(
-    current: Tab,
-    onSelect: (Tab) -> Unit,
-    modifier: Modifier = Modifier,
-    hazeState: HazeState? = null,
-) {
+fun Navbar(current: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier) {
     val state = LocalAppState.current
     val tabs = state.navbarOrder
     val idx = tabs.indexOf(current).coerceAtLeast(0)
 
-    // Pill X — tween + soft ease-out, no overshoot, no bounce.
+    // Pill X — animates with the same tween + curve as the reference.
+    // Spring is intentionally NOT used here: the user said the springy
+    // motion "moves horribly"; the reference glides linearly with a
+    // soft ease-out and no overshoot.
     val indicatorOffset by animateDpAsState(
         targetValue = (ButtonWidth + NavGap) * idx,
         animationSpec = tween(durationMillis = NavMoveMs, easing = NavEasing),
         label = "indicator",
     )
 
-    // Pill squash on tab change: parabolic scaleX 1.0 → 1.12 → 1.0
-    // over 320 ms. Reset to 0 on every change so a fast double-tap
-    // still produces a fresh squash.
+    // Pill squash on tab change: parabolic scaleX 1.0 → 1.12 → 1.0 over
+    // 320 ms. Reset to 0 on every change so a fast double-tap still
+    // produces a fresh squash.
     val squash = remember { Animatable(0f) }
     LaunchedEffect(idx) {
         squash.snapTo(0f)
@@ -126,49 +118,31 @@ fun Navbar(
     // 0 → 0.5 → 1 maps to scaleX 1.0 → 1.12 → 1.0 (parabola peaked at .5)
     val pillScaleX = 1f + 0.12f * (1f - kotlin.math.abs(2f * squash.value - 1f))
 
-    val isDark = Wellness.colors.isDark
-    // Frosted glass tint — kept INTENTIONALLY low so icons stay
-    // crisply visible regardless of what's blurred behind. The
-    // glass effect comes from the real RenderEffect blur (Android
-    // 12+); on older devices we fall through to this tint as a
-    // soft translucent overlay.
-    //   dark theme  → black @ 0.18
-    //   light theme → white @ 0.40
-    val bgColor = if (isDark) Color.Black.copy(alpha = 0.18f)
-                  else Color.White.copy(alpha = 0.40f)
-    val hazeStyle = HazeStyle(
-        tint = bgColor,
-        blurRadius = 24.dp,
-        noiseFactor = HazeDefaults.noiseFactor,
-    )
+    val bg = if (Wellness.colors.isDark) {
+        // Reference dark bg: 0xF21C1C1E — container at ~0.95 alpha.
+        Wellness.colors.container.copy(alpha = 0.95f)
+    } else {
+        Color.White.copy(alpha = 0.95f)
+    }
 
     Box(
         modifier
-            .padding(bottom = 14.dp)
+            // Bottom safe-area gap — matches the 20 px the reference
+            // shell leaves between the island and the bottom of the
+            // device. Keeps the nav floating, not glued to the edge.
+            .padding(bottom = 20.dp)
+            // Single combined shadow standing in for the reference's
+            // two-layer drop shadow (it overlays a wide soft blur with
+            // a tight contact shadow). 16 dp elevation reads close
+            // enough on both themes without going theatrical.
             .shadow(
-                elevation = 12.dp,
+                elevation = 16.dp,
                 shape = RoundedCornerShape(NavCornerRadius),
                 ambientColor = Color.Black,
                 spotColor = Color.Black,
             )
             .clip(RoundedCornerShape(NavCornerRadius))
-            // Background: when a haze source is wired, render the
-            // blurred snapshot of whatever is drawn into that source
-            // (the tab content under the navbar). The bar itself sits
-            // outside the source wrapper so it doesn't appear in its
-            // own blur. Without haze, fall back to the bare tint —
-            // looks like a translucent surface, no crash.
-            .let { base ->
-                if (hazeState != null) {
-                    base.hazeChild(
-                        state = hazeState,
-                        shape = RoundedCornerShape(NavCornerRadius),
-                        style = hazeStyle,
-                    )
-                } else {
-                    base.background(bgColor, RoundedCornerShape(NavCornerRadius))
-                }
-            }
+            .background(bg, RoundedCornerShape(NavCornerRadius))
             .padding(horizontal = NavPadH, vertical = NavPadV)
     ) {
         Box(
@@ -176,60 +150,23 @@ fun Navbar(
                 .width(ButtonWidth * tabs.size + NavGap * (tabs.size - 1))
                 .height(ButtonHeight)
         ) {
-            // The indicator pill (r36: Island Pill v2).
-            //  - Fill is a 160°-ish linear gradient accent → pink so the
-            //    active slot reads warm and slightly two-tone, not flat.
-            //  - A warm outer glow (shadow w/ accent spotColor) gives the
-            //    pill a soft halo on dark theme — matches the prototype's
-            //    `box-shadow: 0 0 24px rgba(255,140,90,.35)`.
-            //  - A 1 dp white-alpha top sheen sells the "glass" highlight
-            //    (inset 0 1px 0 rgba(255,255,255,.10)).
-            //  - Squash-on-tap stays scaleX-only (parabola), so icons
-            //    never get squished.
-            val pillShape = RoundedCornerShape(PillCornerRadius)
-            val accent = Wellness.colors.accent
-            val pillBrush = Brush.linearGradient(
-                colors = listOf(
-                    accent.copy(alpha = 0.30f),
-                    WellnessColors.TilePink.copy(alpha = 0.22f),
-                ),
-                start = Offset(0f, 0f),
-                end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
-            )
+            // The indicator pill — squashes on tap, then settles to a
+            // calm rounded rect under the active slot.
             Box(
                 Modifier
                     .offset(x = indicatorOffset, y = 0.dp)
                     .size(width = ButtonWidth, height = ButtonHeight)
                     .graphicsLayer {
                         scaleX = pillScaleX
+                        // Reference squashes ONLY scaleX. The icons
+                        // sitting on top don't move at all.
                         scaleY = 1f
                     }
-                    // Warm halo. spotColor + ambientColor are accent-tinted,
-                    // so on dark theme this paints a soft orange cast around
-                    // the pill (API 28+). Elevation kept low so it doesn't
-                    // bleed onto neighbouring tabs.
-                    .shadow(
-                        elevation = 8.dp,
-                        shape = pillShape,
-                        ambientColor = accent,
-                        spotColor = accent,
+                    .background(
+                        Wellness.colors.accent.copy(alpha = 0.18f),
+                        RoundedCornerShape(PillCornerRadius),
                     )
-                    .background(pillBrush, pillShape)
-                    .clip(pillShape)
-            ) {
-                // Top sheen — 1 dp tall, fades from white-alpha to transparent.
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                0f to Color.White.copy(alpha = 0.10f),
-                                0.08f to Color.Transparent,
-                            ),
-                            pillShape,
-                        )
-                )
-            }
+            )
 
             Row(Modifier.fillMaxSize()) {
                 tabs.forEachIndexed { i, tab ->
@@ -247,7 +184,9 @@ fun Navbar(
 
 @Composable
 private fun NavItem(tab: Tab, active: Boolean, onClick: () -> Unit) {
-    // Icon tint cross-fades between accent and muted over 200 ms.
+    // Icon tint cross-fades between accent and muted over 200 ms —
+    // same as the reference's AnimatedSwitcher between two const
+    // colored icons, but cheaper: a single tint animation, no swap.
     val tint by animateColorAsState(
         targetValue = if (active) Wellness.colors.accent else Wellness.colors.muted,
         animationSpec = tween(durationMillis = 200, easing = LinearEasing),
@@ -262,18 +201,24 @@ private fun NavItem(tab: Tab, active: Boolean, onClick: () -> Unit) {
             if (tab == Tab.Profile) {
                 ProfileNavSlot()
             } else {
-                SolarIcon(name = tabIcon(tab), tint = tint, size = 22.dp)
+                // No scale, no lift — icons stay perfectly still
+                // (only the pill underneath moves and squashes).
+                SolarIcon(name = tabIcon(tab), tint = tint, size = 24.dp)
             }
         }
     }
 }
 
 /**
- * Profile slot: 26 dp circular avatar.
+ * Profile slot: 28 dp circular avatar.
  *  - Gradient backdrop (accent → pink) + first letter of `userName`
  *    is painted first so the slot never flashes empty.
  *  - When a Telegram photo is bound, an `AsyncImage` crossfades on
  *    top of the backdrop.
+ *
+ * No active-state scale — matches the reference, where the avatar
+ * stays the same size whether selected or not (the pill behind it
+ * is the only thing that changes).
  */
 @Composable
 private fun ProfileNavSlot() {
@@ -284,7 +229,7 @@ private fun ProfileNavSlot() {
 
     Box(
         Modifier
-            .size(26.dp)
+            .size(28.dp)
             .clip(CircleShape)
             .background(
                 Brush.linearGradient(

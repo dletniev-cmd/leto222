@@ -251,7 +251,6 @@ fun WellnessApp() {
                 current = state.currentTab,
                 onSelect = { state.currentTab = it },
                 modifier = Modifier.align(Alignment.BottomCenter),
-                hazeState = hazeState,
             )
         }
 
