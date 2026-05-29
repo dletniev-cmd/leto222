@@ -51,13 +51,16 @@ import com.wellness.app.ui.theme.WellnessColors
 fun NutritionScreen(onAddMeal: () -> Unit = {}) {
     var tab by remember { mutableStateOf("water") }
 
-    ScreenScaffold {
-        ScreenHeader(
-            title = "Питание",
-            trailingIcon = "add-circle-bold-duotone",
-            trailingAccent = true,
-            onTrailingClick = onAddMeal,
-        )
+    ScreenScaffold(
+        pinnedHeader = {
+            ScreenHeader(
+                title = "питание",
+                trailingIcon = "add-circle-bold-duotone",
+                trailingAccent = true,
+                onTrailingClick = onAddMeal,
+            )
+        }
+    ) {
         Box(Modifier.screenHPad()) {
             SegmentedTabs(
                 items = listOf(

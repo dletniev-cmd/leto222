@@ -58,14 +58,16 @@ fun HomeScreen(@Suppress("UNUSED_PARAMETER") onAddWeight: () -> Unit = {}) {
     val today = state.habitsToday()
     val tasksToday = state.tasksToday()
 
-    ScreenScaffold {
-        ScreenHeader(
-            title = "Летифай",
-            trailingIcon = "bell-outline",
-            trailingGhost = true,
-            onTrailingClick = {},
-        )
-
+    ScreenScaffold(
+        pinnedHeader = {
+            ScreenHeader(
+                title = "летифай",
+                trailingIcon = "bell-outline",
+                trailingGhost = true,
+                onTrailingClick = {},
+            )
+        }
+    ) {
         HeroCard()
         Box(Modifier.height(12.dp))
 

@@ -2,7 +2,6 @@ package com.wellness.app.ui
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -229,6 +228,26 @@ fun WellnessApp() {
                 }
             }
         }
+        } // end haze source wrapper — the navbar's backdrop blur reads
+          // ONLY the live tab content here. Overlays are rendered AFTER
+          // the navbar (below) so they layer ON TOP of it: the bar never
+          // moves — a screen / bottom-sheet simply covers it, exactly
+          // like the old versions. Keeping the navbar OUT of the haze
+          // source is also what stops the blur snapshot eating its icons.
+
+        // Navbar — always mounted on the root tabs, fixed in place. It is
+        // a sibling of (not inside) the haze source, and is drawn BEFORE
+        // the overlays so any open screen / sheet sits ON TOP of it
+        // rather than the bar floating over the screen or sliding away.
+        Box(modifier = Modifier.fillMaxSize()) {
+            Navbar(
+                current = state.currentTab,
+                onSelect = { state.currentTab = it },
+                modifier = Modifier.align(Alignment.BottomCenter),
+                hazeState = hazeState,
+            )
+        }
+
         // Underlay — only the second-from-top overlay, rendered
         // statically full-screen behind the active one (no slide, no
         // swipe-back, no-op onBack). Keeps the parent visible during
@@ -288,35 +307,6 @@ fun WellnessApp() {
                 }
             }
         }
-        } // end haze source wrapper — overlays included so the navbar's
-          // backdrop blur captures whatever's currently on screen
-          // (tab content OR open overlay) rather than always the
-          // last-active tab.
-
-        // Navbar belongs to the root tabs only. When any overlay is open
-        // (a Profile sub-section, an add-form, the weight sheet, …) it
-        // slides DOWN off-screen so the detail screen owns the full
-        // height — re-appearing when the overlay is dismissed. We
-        // translate it down rather than fading it (alpha fade left a
-        // ghosted blurred plate mid-transition; a clean slide reads as
-        // "this screen took over").
-        val navHidden = overlay != null
-        val navOffsetY by animateDpAsState(
-            targetValue = if (navHidden) 140.dp else 0.dp,
-            animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
-            label = "navHide",
-        )
-        Box(modifier = Modifier.fillMaxSize()) {
-            Navbar(
-                current = state.currentTab,
-                onSelect = { state.currentTab = it },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .graphicsLayer { translationY = navOffsetY.toPx() },
-                hazeState = hazeState,
-            )
-        }
-
         // Crash reports are written to disk by CrashReporter on uncaught
         // exception and surfaced passively via Profile → Другое → Логи.
         // The previous launch-time dialog interrupted the cold-start flow

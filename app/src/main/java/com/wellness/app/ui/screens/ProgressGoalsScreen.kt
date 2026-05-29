@@ -63,9 +63,12 @@ fun ProgressGoalsScreen(
     val b = calculateGoalProgress(state)
 
     Box(Modifier.fillMaxSize().background(Wellness.colors.bg)) {
-        ScreenScaffold(topPadding = 0.dp) {
-            SettingsHeader(title = "Прогресс целей", onBack = onBack)
-
+        ScreenScaffold(
+            topPadding = 0.dp,
+            pinnedHeader = {
+                SettingsHeader(title = "Прогресс целей", onBack = onBack)
+            },
+        ) {
             HeroCard(breakdown = b)
 
             Box(Modifier.height(20.dp))

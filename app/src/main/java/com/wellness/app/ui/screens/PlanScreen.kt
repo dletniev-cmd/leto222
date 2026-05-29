@@ -272,7 +272,7 @@ fun PlanScreen(
         val titleMeasurer = rememberTextMeasurer()
         val titleStyle = Wellness.typography.displayMedium
         val titleLayout = remember(titleMeasurer, titleStyle, density) {
-            titleMeasurer.measure(text = AnnotatedString("План"), style = titleStyle)
+            titleMeasurer.measure(text = AnnotatedString("план"), style = titleStyle)
         }
         @Suppress("UNUSED_VARIABLE") val titleWidthPx = titleLayout.size.width.toFloat()
         val ringTargetScale = RingTarget.value / RingNatural.value
@@ -410,7 +410,7 @@ fun PlanScreen(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = "План",
+                text = "план",
                 color = Wellness.colors.text,
                 style = titleStyle,
                 // Title is anchored dead-centre at all times. The mini-
