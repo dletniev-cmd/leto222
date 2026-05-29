@@ -2,6 +2,7 @@ package com.wellness.app.ui
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -292,16 +293,26 @@ fun WellnessApp() {
           // (tab content OR open overlay) rather than always the
           // last-active tab.
 
-        // Navbar sits ON TOP of overlays in z-order so it stays visible
-        // when a screen is open. No parallax fade — it never disappears
-        // mid-transition; only the tab content / overlay underneath it
-        // slides. The bar's hazeChild reads the live source under it
-        // (now including the overlay).
+        // Navbar belongs to the root tabs only. When any overlay is open
+        // (a Profile sub-section, an add-form, the weight sheet, …) it
+        // slides DOWN off-screen so the detail screen owns the full
+        // height — re-appearing when the overlay is dismissed. We
+        // translate it down rather than fading it (alpha fade left a
+        // ghosted blurred plate mid-transition; a clean slide reads as
+        // "this screen took over").
+        val navHidden = overlay != null
+        val navOffsetY by animateDpAsState(
+            targetValue = if (navHidden) 140.dp else 0.dp,
+            animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+            label = "navHide",
+        )
         Box(modifier = Modifier.fillMaxSize()) {
             Navbar(
                 current = state.currentTab,
                 onSelect = { state.currentTab = it },
-                modifier = Modifier.align(Alignment.BottomCenter),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .graphicsLayer { translationY = navOffsetY.toPx() },
                 hazeState = hazeState,
             )
         }

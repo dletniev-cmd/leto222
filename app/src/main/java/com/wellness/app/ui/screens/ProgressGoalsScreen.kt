@@ -202,10 +202,18 @@ private fun StatChip(
     deltaColor: Color,
     modifier: Modifier = Modifier,
 ) {
+    // Chip fill is theme-aware: on dark a translucent black sinks the
+    // chip into the gradient; on light a black 32% box would read as an
+    // ugly grey slab over the white card, so we use a much softer scrim.
+    val chipBg = if (Wellness.colors.isDark) {
+        Color.Black.copy(alpha = 0.32f)
+    } else {
+        Color.Black.copy(alpha = 0.05f)
+    }
     Column(
         modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(Color.Black.copy(alpha = 0.32f), RoundedCornerShape(14.dp))
+            .background(chipBg, RoundedCornerShape(14.dp))
             .padding(horizontal = 10.dp, vertical = 10.dp),
     ) {
         Text(
@@ -296,7 +304,7 @@ private fun WeightTrackerCard(weight: WeightProgress?, onAddWeight: () -> Unit) 
                     .size(40.dp)
                     .background(WellnessColors.Purple.copy(alpha = 0.16f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
-            ) { SolarIcon(name = "scale-outline", tint = WellnessColors.Purple, size = 22.dp) }
+            ) { SolarIcon(name = "scale-bold-duotone", tint = WellnessColors.Purple, size = 22.dp) }
             Box(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
