@@ -242,16 +242,17 @@ fun WellnessApp() {
         // screen) it's invisible. The fade is driven inside a graphicsLayer
         // block so reading the float doesn't trigger recomposition of the
         // navbar tree.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { alpha = parallax.floatValue },
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Parallax-driven fade is now applied INSIDE Navbar so it
+            // covers both the icons/pill AND the hazeChild backdrop
+            // (otherwise the blur stayed at full alpha while icons
+            // faded — read as "icons disappear" during overlay open).
             Navbar(
                 current = state.currentTab,
                 onSelect = { state.currentTab = it },
                 modifier = Modifier.align(Alignment.BottomCenter),
                 hazeState = hazeState,
+                alpha = { parallax.floatValue },
             )
         }
 

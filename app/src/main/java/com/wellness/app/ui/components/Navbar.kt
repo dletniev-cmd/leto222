@@ -96,6 +96,10 @@ fun Navbar(
     onSelect: (Tab) -> Unit,
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
+    // Lambda (not float) so the caller can drive a parallax/fade
+    // without triggering recomposition of the navbar subtree. The
+    // graphicsLayer below reads it once per frame at draw time.
+    alpha: () -> Float = { 1f },
 ) {
     val state = LocalAppState.current
     val tabs = state.navbarOrder
@@ -133,16 +137,26 @@ fun Navbar(
     } else {
         Color.White.copy(alpha = 0.62f)
     }
-    // Light, smooth blur: 16 dp RenderEffect, no noise, static tint —
-    // no animated parameter on the blur itself so nothing can "jitter".
+    // Frosted-glass blur. Radius 22 dp — small enough to read as
+    // "light" but big enough that scrolling text underneath doesn't
+    // produce visible sub-pixel jitter (at 16 dp the blur was sharp
+    // enough that per-frame source updates showed up as shimmer).
+    // noiseFactor = 0 → no grain on top of the tint.
     val hazeStyle = HazeStyle(
         tint = bg,
-        blurRadius = 16.dp,
+        blurRadius = 22.dp,
         noiseFactor = 0f,
     )
 
     Box(
         modifier
+            // Parent-driven fade lives HERE, on the same layer that
+            // owns the hazeChild draw, so the blurred backdrop fades
+            // in lock-step with the icons and pill. Putting the layer
+            // on a parent Box (as we did in r38) made hazeChild draw
+            // at full alpha while the icons faded — net effect:
+            // "empty navbar" during an overlay slide-in.
+            .graphicsLayer { this.alpha = alpha().coerceIn(0f, 1f) }
             // Bottom safe-area gap — matches the 20 px the reference
             // shell leaves between the island and the bottom of the
             // device. Keeps the nav floating, not glued to the edge.
