@@ -105,25 +105,47 @@ fun <T> WheelPicker(
     // Start near the middle so the user has roughly the same scrollable
     // distance up and down before reaching the (unreachable in practice)
     // edge.
+    // Integer half-count of rows on EACH side of the centre row.
+    // With visibleItems=5 the centred row sits at offset 2 from the
+    // first visible row (rows 0,1,[2],3,4 fill the box top-to-bottom
+    // because contentPadding is zero). This is the same constant used
+    // by both the initial-scroll positioning AND the "what's centred
+    // now" derived state — keep them in sync or the picker reports a
+    // different value than the user sees (the bug that was causing the
+    // reminder time, weight wheel, habit target etc. to commit a value
+    // shifted by `halfItems` rows from what was visually centred).
+    val halfItems = visibleItems / 2
+
     val virtualCount = remember { Int.MAX_VALUE / 4 }
-    val midBlock = remember(n) {
+    val midBlock = remember(n, halfItems) {
         val mid = virtualCount / 2
-        mid - (mid % n) + initialIndex.coerceIn(0, n - 1)
+        // We want the row whose real-mod index equals `initialIndex`
+        // to land in the CENTRE of the box. Centre row = first visible
+        // + halfItems, so the first visible must equal initialIndex -
+        // halfItems (mod n).
+        val firstReal = (((initialIndex.coerceIn(0, n - 1) - halfItems) % n) + n) % n
+        mid - (mid % n) + firstReal
     }
 
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = midBlock)
     val fling = rememberSnapFlingBehavior(lazyListState = listState)
 
     // Selected index = the row whose centre is closest to the column's
-    // centre. We use the list's offset/itemHeight to determine whether
-    // the first-visible row has scrolled past its halfway mark; if so,
-    // the row below it is the centred one. Then mod into the real
+    // centre. Centre row = firstVisible + halfItems; if the first-
+    // visible row has scrolled past its halfway mark, the row BELOW
+    // the geometric centre is the snapped one. Then mod into the real
     // values range.
-    val selectedIndex by remember(n) {
+    //
+    // Previously this formula omitted the `+ halfItems` term, so the
+    // wheel reported the topmost visible (faded) row as "selected" —
+    // for a 5-row wheel resting on `11`, the commit was `09`, which
+    // is exactly the symptom the user reported (picker visually at
+    // 11:03, parent settings row showed 09:01).
+    val selectedIndex by remember(n, halfItems) {
         derivedStateOf {
             val first = listState.firstVisibleItemIndex
             val offset = listState.firstVisibleItemScrollOffset
-            val candidate = first + if (offset > itemHeightPx / 2f) 1 else 0
+            val candidate = first + halfItems + if (offset > itemHeightPx / 2f) 1 else 0
             ((candidate % n) + n) % n
         }
     }
