@@ -40,6 +40,17 @@ fun ScreenScaffold(
     scrollState: ScrollState = rememberScrollState(),
     topPadding: Dp = 6.dp,
     pinnedHeader: (@Composable () -> Unit)? = null,
+    // When the pinned header has a known, constant height the caller can
+    // pass it here. The scaffold then reserves that height directly with a
+    // plain Box + leading Spacer, skipping the SubcomposeLayout below.
+    // SubcomposeLayout composes its body DURING the layout phase, which is
+    // measurably heavier on the first frame — and that first frame coincides
+    // with the overlay slide-in spring, so the extra work shows up as a
+    // hitch ("подлагивает") right when the screen opens. A constant height
+    // also means the body's top spacer is correct on frame 0 with no
+    // measure-readback, so we keep the jitter-free property the
+    // SubcomposeLayout path was introduced for, without its cost.
+    pinnedHeaderHeight: Dp? = null,
     content: @Composable () -> Unit,
 ) {
     CompositionLocalProvider(LocalScreenHPad provides horizontalPadding) {
@@ -56,6 +67,34 @@ fun ScreenScaffold(
                         .padding(top = topPadding, bottom = 160.dp)
                 ) {
                     content()
+                }
+            }
+        } else if (pinnedHeaderHeight != null) {
+            // Fast path: header height is a known constant, so we reserve it
+            // with a leading Spacer and pin the header in a plain Box overlay.
+            // No SubcomposeLayout → no body composition during layout → a
+            // cheaper, jank-free first frame when the screen slides in.
+            val topInset =
+                WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + topPadding
+            Box(Modifier.fillMaxSize()) {
+                ElasticOverscroll(modifier = Modifier.fillMaxSize()) {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(scrollState)
+                            .padding(bottom = 160.dp)
+                    ) {
+                        Spacer(Modifier.height(topInset + pinnedHeaderHeight))
+                        content()
+                    }
+                }
+                // Pinned header on top, glued to the shared top inset.
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = topInset)
+                ) {
+                    pinnedHeader()
                 }
             }
         } else {

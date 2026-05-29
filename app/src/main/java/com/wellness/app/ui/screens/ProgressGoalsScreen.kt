@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -79,6 +80,11 @@ fun ProgressGoalsScreen(
             pinnedHeader = {
                 SettingsHeader(title = "Прогресс целей", onBack = onBack)
             },
+            // SettingsHeader is a fixed-height bar (44dp back button + 4/6
+            // vertical padding = 54dp). Passing it lets the scaffold skip
+            // the SubcomposeLayout and compose this (chart-heavy) screen on a
+            // lighter first frame, so the slide-in no longer stutters.
+            pinnedHeaderHeight = 54.dp,
         ) {
             HeroCard(breakdown = b)
 
@@ -298,10 +304,13 @@ private fun WeightTrackerCard(weight: WeightProgress?, onAddWeight: () -> Unit) 
     // Points are the same demo series the old TrackersScreen used. Last
     // point reflects the live weight so the "↓ 0,5" mini-delta updates
     // when the user logs a new weigh-in.
-    val basePoints = listOf(78.9f, 78.6f, 78.5f, 78.7f, 78.4f, 78.2f)
-    val points = basePoints + current
+    // Memoised so the card doesn't re-allocate the series / recompute the
+    // average on every recomposition (e.g. theme change, sibling sheets).
+    val points = remember(current) {
+        listOf(78.9f, 78.6f, 78.5f, 78.7f, 78.4f, 78.2f) + current
+    }
     val miniDelta = points.last() - points.first()  // negative = lost weight
-    val avg = points.average().toFloat()
+    val avg = remember(points) { points.average().toFloat() }
     val remaining = (current - goal).coerceAtLeast(0f)
 
     Column(
