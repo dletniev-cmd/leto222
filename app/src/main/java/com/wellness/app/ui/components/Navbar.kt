@@ -59,7 +59,6 @@ fun tabIcon(tab: Tab): String = when (tab) {
     Tab.Home -> "home-2-bold-duotone"
     Tab.Nutrition -> "fire-bold-duotone"
     Tab.Plan -> "calendar-bold-duotone"
-    Tab.Trackers -> "chart-2-bold-duotone"
     Tab.Profile -> "user-bold-duotone"
 }
 
@@ -68,7 +67,6 @@ fun tabTitle(tab: Tab): String = when (tab) {
     Tab.Home -> "Главная"
     Tab.Nutrition -> "Питание"
     Tab.Plan -> "План"
-    Tab.Trackers -> "Трекеры"
     Tab.Profile -> "Профиль"
 }
 

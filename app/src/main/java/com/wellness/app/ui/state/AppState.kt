@@ -18,7 +18,7 @@ import com.wellness.app.ui.theme.WellnessColors
 import java.time.DayOfWeek
 import java.time.LocalDate
 
-enum class Tab(val key: String) { Home("home"), Nutrition("nutrition"), Plan("plan"), Trackers("trackers"), Profile("profile") }
+enum class Tab(val key: String) { Home("home"), Nutrition("nutrition"), Plan("plan"), Profile("profile") }
 
 enum class Gender(val title: String) { Male("Мужской"), Female("Женский"), Other("Не указан") }
 
@@ -183,7 +183,7 @@ class AppState(private val bindingStore: TelegramBindingStore? = null) {
 
     // Navbar configuration — order of items and which tab opens by default.
     val navbarOrder: SnapshotStateList<Tab> = mutableStateListOf(
-        Tab.Home, Tab.Nutrition, Tab.Plan, Tab.Trackers, Tab.Profile,
+        Tab.Home, Tab.Nutrition, Tab.Plan, Tab.Profile,
     )
     var defaultTab by mutableStateOf(Tab.Home)
     var currentTab by mutableStateOf(defaultTab)

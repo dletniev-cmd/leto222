@@ -415,7 +415,6 @@ private fun tileForTab(tab: Tab): androidx.compose.ui.graphics.Color = when (tab
     Tab.Home -> WellnessColors.TileBlue
     Tab.Nutrition -> WellnessColors.TileOrange
     Tab.Plan -> WellnessColors.TileViolet
-    Tab.Trackers -> WellnessColors.TileGreen
     Tab.Profile -> WellnessColors.TileTeal
 }
 

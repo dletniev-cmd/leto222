@@ -57,7 +57,6 @@ import com.wellness.app.ui.screens.NutritionScreen
 import com.wellness.app.ui.screens.PlanScreen
 import com.wellness.app.ui.screens.ProfileScreen
 import com.wellness.app.ui.screens.ProgressGoalsScreen
-import com.wellness.app.ui.screens.TrackersScreen
 import com.wellness.app.ui.state.LocalAppState
 import com.wellness.app.ui.state.Tab
 import com.wellness.app.ui.theme.Wellness
@@ -212,10 +211,6 @@ fun WellnessApp() {
                             onAddHabit = { push(AddOverlay.Habit) },
                             onAddTask = { push(AddOverlay.Task) },
                         )
-                        Tab.Trackers -> TrackersScreen(
-                            onAddWeight = { push(AddOverlay.Weight) },
-                            onAddSleep = { push(AddOverlay.Sleep) },
-                        )
                         Tab.Profile -> ProfileScreen(
                             onEditProfile = { push(AddOverlay.EditProfile) },
                             onGoals = { push(AddOverlay.Goals) },
@@ -285,6 +280,8 @@ fun WellnessApp() {
                             current = current,
                             animatedBack = animatedBack,
                             onPushLogs = { push(AddOverlay.Logs) },
+                            onPushWeight = { push(AddOverlay.Weight) },
+                            onPushSleep = { push(AddOverlay.Sleep) },
                         )
                     }
                 }
@@ -328,6 +325,8 @@ private fun OverlayContent(
     current: AddOverlay,
     animatedBack: () -> Unit,
     onPushLogs: () -> Unit,
+    onPushWeight: () -> Unit = {},
+    onPushSleep: () -> Unit = {},
 ) {
     when (current) {
         AddOverlay.Habit -> AddHabitScreen(onBack = animatedBack)
@@ -343,7 +342,11 @@ private fun OverlayContent(
         AddOverlay.Tiwi -> TiwiPlaceholder(onBack = animatedBack)
         AddOverlay.Other -> OtherScreen(onBack = animatedBack, onLogs = onPushLogs)
         AddOverlay.Logs -> LogsScreen(onBack = animatedBack)
-        AddOverlay.ProgressGoals -> ProgressGoalsScreen(onBack = animatedBack)
+        AddOverlay.ProgressGoals -> ProgressGoalsScreen(
+            onBack = animatedBack,
+            onAddWeight = onPushWeight,
+            onAddSleep = onPushSleep,
+        )
     }
 }
 
