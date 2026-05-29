@@ -42,6 +42,10 @@ import com.wellness.app.ui.state.LocalAppState
 import com.wellness.app.ui.state.Tab
 import com.wellness.app.ui.theme.Wellness
 import com.wellness.app.ui.theme.WellnessColors
+import dev.chrisbanes.haze.HazeDefaults
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.hazeChild
 
 /**
  * One icon per tab — the SAME asset is used in both active and inactive
@@ -92,6 +96,7 @@ fun Navbar(
     current: Tab,
     onSelect: (Tab) -> Unit,
     modifier: Modifier = Modifier,
+    hazeState: HazeState? = null,
 ) {
     val state = LocalAppState.current
     val tabs = state.navbarOrder
@@ -119,15 +124,20 @@ fun Navbar(
     val pillScaleX = 1f + 0.12f * (1f - kotlin.math.abs(2f * squash.value - 1f))
 
     val isDark = Wellness.colors.isDark
-    // User asked for a *transparent* navbar — the previous attempt at
-    // a heavy frosted-glass tint (alpha .55) drowned the icons. This
-    // is the right balance: low-alpha tinted layer over the home BG,
-    // so the icons stay perfectly legible while the bar still reads
-    // as a distinct floating surface.
-    //   dark theme  → black @ 0.32   (slightly darker than the home BG)
-    //   light theme → white @ 0.55  (slightly lighter than home BG)
-    val bgColor = if (isDark) Color.Black.copy(alpha = 0.32f)
-                  else Color.White.copy(alpha = 0.55f)
+    // Frosted glass tint — kept INTENTIONALLY low so icons stay
+    // crisply visible regardless of what's blurred behind. The
+    // glass effect comes from the real RenderEffect blur (Android
+    // 12+); on older devices we fall through to this tint as a
+    // soft translucent overlay.
+    //   dark theme  → black @ 0.18
+    //   light theme → white @ 0.40
+    val bgColor = if (isDark) Color.Black.copy(alpha = 0.18f)
+                  else Color.White.copy(alpha = 0.40f)
+    val hazeStyle = HazeStyle(
+        tint = bgColor,
+        blurRadius = 24.dp,
+        noiseFactor = HazeDefaults.noiseFactor,
+    )
 
     Box(
         modifier
@@ -138,8 +148,24 @@ fun Navbar(
                 ambientColor = Color.Black,
                 spotColor = Color.Black,
             )
-            .background(bgColor, RoundedCornerShape(NavCornerRadius))
             .clip(RoundedCornerShape(NavCornerRadius))
+            // Background: when a haze source is wired, render the
+            // blurred snapshot of whatever is drawn into that source
+            // (the tab content under the navbar). The bar itself sits
+            // outside the source wrapper so it doesn't appear in its
+            // own blur. Without haze, fall back to the bare tint —
+            // looks like a translucent surface, no crash.
+            .let { base ->
+                if (hazeState != null) {
+                    base.hazeChild(
+                        state = hazeState,
+                        shape = RoundedCornerShape(NavCornerRadius),
+                        style = hazeStyle,
+                    )
+                } else {
+                    base.background(bgColor, RoundedCornerShape(NavCornerRadius))
+                }
+            }
             .padding(horizontal = NavPadH, vertical = NavPadV)
     ) {
         Box(

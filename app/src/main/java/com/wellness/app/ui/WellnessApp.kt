@@ -61,6 +61,8 @@ import com.wellness.app.ui.screens.TrackersScreen
 import com.wellness.app.ui.state.LocalAppState
 import com.wellness.app.ui.state.Tab
 import com.wellness.app.ui.theme.Wellness
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.haze
 
 /**
  * Identifies which secondary screen is currently active on top of the tabs.
@@ -154,7 +156,16 @@ fun WellnessApp() {
     // there's no flicker before the first RSO write.
     val underlayParallax = remember { mutableFloatStateOf(1f) }
 
+    // Frosted-glass source — captures the tab content drawn under
+    // the navbar so the bar can render a real RenderEffect-blurred
+    // snapshot through it. The source is on a SIBLING wrapper, not
+    // on the root that also holds the navbar, so the navbar's own
+    // pixels don't end up in the source (avoids the empty-navbar
+    // feedback we saw in r33).
+    val hazeState = remember { HazeState() }
+
     Box(Modifier.fillMaxSize().background(Wellness.colors.bg)) {
+        Box(Modifier.fillMaxSize().haze(hazeState)) {
         OverlayHost(parallaxProgress = parallax) {
             Box(Modifier.fillMaxSize()) {
                 AnimatedContent(
@@ -222,6 +233,7 @@ fun WellnessApp() {
                 }
             }
         }
+        } // end haze source wrapper
 
         // Navbar lives OUTSIDE the parallax host so it doesn't slide off to
         // the left along with the tab content when an overlay opens. Instead
@@ -239,6 +251,7 @@ fun WellnessApp() {
                 current = state.currentTab,
                 onSelect = { state.currentTab = it },
                 modifier = Modifier.align(Alignment.BottomCenter),
+                hazeState = hazeState,
             )
         }
 
