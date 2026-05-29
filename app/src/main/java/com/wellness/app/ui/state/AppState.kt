@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import com.wellness.app.data.WellnessDataStore
 import com.wellness.app.telegram.TelegramAuth
 import com.wellness.app.telegram.TelegramBindingStore
 import com.wellness.app.ui.theme.ThemeMode
@@ -134,7 +135,27 @@ private fun formatRelative(total: Int): String = when {
     else -> "${total / 60}ч ${total % 60}м"
 }
 
-data class SleepDay(val label: String, val height: Float, val highlighted: Boolean = false)
+// ── Real logged data ──────────────────────────────────────────────────────
+//
+// These are the user's actual records (no demo seed): a list of weigh-ins
+// and a list of sleep nights, both keyed by ISO date. The trackers on the
+// Progress-Goals screen derive everything they show from these.
+
+data class WeightEntry(val dateKey: String, val kg: Float)
+
+data class SleepEntry(
+    val dateKey: String,
+    val fromMinutes: Int,   // bedtime, minutes from midnight
+    val toMinutes: Int,     // wake time, minutes from midnight
+    val quality: Int,       // 0=плохо 1=так себе 2=норм 3=отлично
+) {
+    /** Duration in minutes, wrapping past midnight (e.g. 23:30 → 07:00). */
+    val durationMinutes: Int
+        get() {
+            val raw = toMinutes - fromMinutes
+            return if (raw <= 0) raw + 24 * 60 else raw
+        }
+}
 
 // ── Date helpers ──────────────────────────────────────────────────────────
 
@@ -152,7 +173,10 @@ object Dates {
 
 // ── AppState ──────────────────────────────────────────────────────────────
 
-class AppState(private val bindingStore: TelegramBindingStore? = null) {
+class AppState(
+    private val bindingStore: TelegramBindingStore? = null,
+    private val dataStore: WellnessDataStore? = null,
+) {
     var themeMode by mutableStateOf(ThemeMode.Dark)
     var accent by mutableStateOf<Color>(WellnessColors.Purple)
 
@@ -315,20 +339,59 @@ class AppState(private val bindingStore: TelegramBindingStore? = null) {
     // initial `weight` so the bar lands at a non-zero, non-100 % value
     // on a fresh install (matches the prototype's example) and so the
     // user can see the bar respond as soon as they log a weigh-in.
-    var weight by mutableStateOf(78.4f)
-    var weightGoal by mutableStateOf(75.0f)
-    var weightStart by mutableStateOf(80.0f)
+    // Backed by mutableStateOf but exposed through custom setters so any
+    // assignment (here or from the profile goal screen) is persisted.
+    private val _weight = mutableStateOf(dataStore?.loadWeight(78.4f) ?: 78.4f)
+    private val _weightGoal = mutableStateOf(dataStore?.loadWeightGoal(75.0f) ?: 75.0f)
+    private val _weightStart = mutableStateOf(dataStore?.loadWeightStart(80.0f) ?: 80.0f)
 
-    // Sleep last 7 days (relative height 0..1)
-    val sleep: List<SleepDay> = listOf(
-        SleepDay("Пн", 0.55f),
-        SleepDay("Вт", 0.75f),
-        SleepDay("Ср", 0.60f),
-        SleepDay("Чт", 0.80f),
-        SleepDay("Пт", 0.70f),
-        SleepDay("Сб", 0.90f),
-        SleepDay("Вс", 0.74f, highlighted = true),
-    )
+    var weight: Float
+        get() = _weight.value
+        set(v) { _weight.value = v; persistWeightScalars() }
+    var weightGoal: Float
+        get() = _weightGoal.value
+        set(v) { _weightGoal.value = v; persistWeightScalars() }
+    var weightStart: Float
+        get() = _weightStart.value
+        set(v) { _weightStart.value = v; persistWeightScalars() }
+
+    // Real weigh-in history (chronological as logged). Drives the weight chart.
+    val weightLog: SnapshotStateList<WeightEntry> =
+        mutableStateListOf<WeightEntry>().apply {
+            dataStore?.loadWeightLog()?.let { addAll(it) }
+        }
+
+    // Real sleep history. Drives the sleep card + bars.
+    val sleepLog: SnapshotStateList<SleepEntry> =
+        mutableStateListOf<SleepEntry>().apply {
+            dataStore?.loadSleepLog()?.let { addAll(it) }
+        }
+
+    /** Target sleep per night, in minutes (default 8h). */
+    val sleepGoalMinutes: Int = dataStore?.loadSleepGoal(8 * 60) ?: (8 * 60)
+
+    /** Record (or overwrite) today's weigh-in and update the current weight. */
+    fun logWeight(kg: Float) {
+        val k = Dates.todayKey()
+        val entry = WeightEntry(k, kg)
+        val idx = weightLog.indexOfFirst { it.dateKey == k }
+        if (idx >= 0) weightLog[idx] = entry else weightLog.add(entry)
+        weight = kg  // also persists scalars
+        dataStore?.saveWeightLog(weightLog.toList())
+    }
+
+    /** Record (or overwrite) today's sleep night. */
+    fun logSleep(fromMinutes: Int, toMinutes: Int, quality: Int) {
+        val k = Dates.todayKey()
+        val entry = SleepEntry(k, fromMinutes, toMinutes, quality)
+        val idx = sleepLog.indexOfFirst { it.dateKey == k }
+        if (idx >= 0) sleepLog[idx] = entry else sleepLog.add(entry)
+        dataStore?.saveSleepLog(sleepLog.toList())
+    }
+
+    private fun persistWeightScalars() {
+        dataStore?.saveWeightScalars(_weight.value, _weightGoal.value, _weightStart.value)
+    }
 
     // Profile
     var userName by mutableStateOf("Иван")
@@ -360,6 +423,9 @@ val LocalAppState = compositionLocalOf<AppState> { error("AppState not provided"
 fun rememberAppState(): AppState {
     val context = LocalContext.current.applicationContext
     return remember {
-        AppState(bindingStore = TelegramBindingStore(context))
+        AppState(
+            bindingStore = TelegramBindingStore(context),
+            dataStore = WellnessDataStore(context),
+        )
     }
 }

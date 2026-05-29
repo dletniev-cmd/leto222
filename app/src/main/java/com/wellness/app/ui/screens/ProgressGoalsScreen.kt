@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,9 +41,30 @@ import com.wellness.app.ui.state.LocalAppState
 import com.wellness.app.ui.state.TasksProgress
 import com.wellness.app.ui.state.WeightProgress
 import com.wellness.app.ui.state.calculateGoalProgress
+import com.wellness.app.ui.state.SleepEntry
+import com.wellness.app.ui.state.WeightEntry
 import com.wellness.app.ui.theme.Wellness
 import com.wellness.app.ui.theme.WellnessColors
+import java.time.LocalDate
 import kotlin.math.abs
+
+// ── Shared helpers for the real trackers ───────────────────────────────
+
+private val SHORT_DOW = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+
+private fun shortDow(dateKey: String): String =
+    runCatching { SHORT_DOW[LocalDate.parse(dateKey).dayOfWeek.value - 1] }.getOrDefault("")
+
+private fun formatHm(minutes: Int): String {
+    val h = minutes / 60
+    val m = minutes % 60
+    return if (m == 0) "${h}ч" else "${h}ч ${m}м"
+}
+
+private fun sleepQualityLabel(q: Int): String =
+    listOf("плохо", "так себе", "норм", "отлично").getOrElse(q) { "норм" }
+
+private fun oneDecimalComma(v: Float): String = "%.1f".format(v).replace('.', ',')
 
 /**
  * Detail screen reached by tapping the goal progress bar on the
@@ -66,6 +86,24 @@ fun ProgressGoalsScreen(
     val state = LocalAppState.current
     val b = calculateGoalProgress(state)
 
+    // Real weekly weight change, derived from logged weigh-ins. Shown as the
+    // sub-line under the big % (replaces the old hardcoded "+8% за неделю").
+    // Hidden when there aren't at least two weigh-ins to compare.
+    val weeklyNote = run {
+        val sorted = state.weightLog.sortedBy { it.dateKey }
+        val last = sorted.lastOrNull()
+        if (last == null || sorted.size < 2) {
+            null
+        } else {
+            val weekAgo = LocalDate.parse(last.dateKey).minusDays(7)
+            val ref = sorted.lastOrNull { LocalDate.parse(it.dateKey) <= weekAgo }
+                ?: sorted.first()
+            val d = last.kg - ref.kg
+            if (abs(d) < 0.05f) "стабильно за неделю"
+            else "${if (d < 0) "↓" else "↑"} ${oneDecimalComma(abs(d))} кг за неделю"
+        }
+    }
+
     // The scroll position is HOISTED by the caller (WellnessApp) and the
     // SAME ScrollState instance is handed to both the "top overlay" and the
     // "underlay" rendering of this screen. Without that, opening the weight /
@@ -86,7 +124,7 @@ fun ProgressGoalsScreen(
             // lighter first frame, so the slide-in no longer stutters.
             pinnedHeaderHeight = 54.dp,
         ) {
-            HeroCard(breakdown = b)
+            HeroCard(breakdown = b, weeklyNote = weeklyNote)
 
             Box(Modifier.height(20.dp))
             TrackersHeader()
@@ -106,7 +144,7 @@ fun ProgressGoalsScreen(
 // ── Hero (Big % + chips) ───────────────────────────────────────────────
 
 @Composable
-private fun HeroCard(breakdown: GoalBreakdown) {
+private fun HeroCard(breakdown: GoalBreakdown, weeklyNote: String?) {
     val percent = (breakdown.overall * 100f).toInt()
     val gradient = Brush.linearGradient(
         colors = listOf(
@@ -141,12 +179,14 @@ private fun HeroCard(breakdown: GoalBreakdown) {
                         fontSize = 56.sp,
                         lineHeight = 56.sp,
                     )
-                    Box(Modifier.height(4.dp))
-                    Text(
-                        "+8% за неделю",
-                        color = Wellness.colors.muted,
-                        style = Wellness.typography.bodySmall,
-                    )
+                    if (weeklyNote != null) {
+                        Box(Modifier.height(4.dp))
+                        Text(
+                            weeklyNote,
+                            color = Wellness.colors.muted,
+                            style = Wellness.typography.bodySmall,
+                        )
+                    }
                 }
                 MiniRing(progress = breakdown.overall)
             }
@@ -299,18 +339,18 @@ private fun TrackersHeader() {
 @Composable
 private fun WeightTrackerCard(weight: WeightProgress?, onAddWeight: () -> Unit) {
     val state = LocalAppState.current
-    val current = weight?.currentKg ?: state.weight
     val goal = weight?.goalKg ?: state.weightGoal
-    // Points are the same demo series the old TrackersScreen used. Last
-    // point reflects the live weight so the "↓ 0,5" mini-delta updates
-    // when the user logs a new weigh-in.
-    // Memoised so the card doesn't re-allocate the series / recompute the
-    // average on every recomposition (e.g. theme change, sibling sheets).
-    val points = remember(current) {
-        listOf(78.9f, 78.6f, 78.5f, 78.7f, 78.4f, 78.2f) + current
-    }
-    val miniDelta = points.last() - points.first()  // negative = lost weight
-    val avg = remember(points) { points.average().toFloat() }
+
+    // Real weigh-ins, chronological, last 7. Everything below is derived
+    // from what the user actually logged — no demo series.
+    val entries: List<WeightEntry> = state.weightLog
+        .sortedBy { it.dateKey }
+        .takeLast(7)
+    val points = entries.map { it.kg }
+    val hasData = points.isNotEmpty()
+    val current = points.lastOrNull() ?: weight?.currentKg ?: state.weight
+    val miniDelta = if (points.size >= 2) points.last() - points.first() else 0f
+    val avg = if (hasData) points.average().toFloat() else 0f
     val remaining = (current - goal).coerceAtLeast(0f)
 
     Column(
@@ -337,7 +377,7 @@ private fun WeightTrackerCard(weight: WeightProgress?, onAddWeight: () -> Unit) 
                 )
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
-                        "%.1f".format(current).replace('.', ','),
+                        if (hasData) oneDecimalComma(current) else "—",
                         color = Wellness.colors.text,
                         style = Wellness.typography.displayMedium,
                     )
@@ -346,54 +386,64 @@ private fun WeightTrackerCard(weight: WeightProgress?, onAddWeight: () -> Unit) 
                         color = Wellness.colors.muted,
                         style = Wellness.typography.bodyMedium,
                     )
-                    Box(Modifier.width(8.dp))
-                    val isLoss = miniDelta < 0f
-                    Text(
-                        text = "${if (isLoss) "↓" else "↑"} ${"%.1f".format(abs(miniDelta)).replace('.', ',')}",
-                        color = if (isLoss) WellnessColors.Mint else WellnessColors.Pink,
-                        style = Wellness.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    if (points.size >= 2) {
+                        Box(Modifier.width(8.dp))
+                        val isLoss = miniDelta < 0f
+                        Text(
+                            text = "${if (isLoss) "↓" else "↑"} ${oneDecimalComma(abs(miniDelta))}",
+                            color = if (isLoss) WellnessColors.Mint else WellnessColors.Pink,
+                            style = Wellness.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
             IconButtonRound(icon = "add-circle-bold-duotone", accent = true, onClick = onAddWeight)
         }
         Box(Modifier.height(10.dp))
-        WeightChart(points = points, goalKg = goal)
-        Box(Modifier.height(4.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс").forEach {
-                Text(it, color = Wellness.colors.muted, style = Wellness.typography.bodySmall)
+        if (hasData) {
+            WeightChart(points = points, goalKg = goal)
+            Box(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                entries.forEach {
+                    Text(
+                        shortDow(it.dateKey),
+                        color = Wellness.colors.muted,
+                        style = Wellness.typography.bodySmall,
+                    )
+                }
             }
-        }
-        Box(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Row {
-                Text(
-                    "Среднее ",
-                    color = Wellness.colors.muted,
-                    style = Wellness.typography.bodySmall,
-                )
-                Text(
-                    "${"%.1f".format(avg).replace('.', ',')} кг",
-                    color = Wellness.colors.text,
-                    style = Wellness.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
+            Box(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row {
+                    Text(
+                        "Среднее ",
+                        color = Wellness.colors.muted,
+                        style = Wellness.typography.bodySmall,
+                    )
+                    Text(
+                        "${oneDecimalComma(avg)} кг",
+                        color = Wellness.colors.text,
+                        style = Wellness.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Row {
+                    Text(
+                        "осталось ",
+                        color = Wellness.colors.muted,
+                        style = Wellness.typography.bodySmall,
+                    )
+                    Text(
+                        "${oneDecimalComma(remaining)} кг",
+                        color = Wellness.colors.text,
+                        style = Wellness.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
-            Row {
-                Text(
-                    "осталось ",
-                    color = Wellness.colors.muted,
-                    style = Wellness.typography.bodySmall,
-                )
-                Text(
-                    "${"%.1f".format(remaining).replace('.', ',')} кг",
-                    color = Wellness.colors.text,
-                    style = Wellness.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
+        } else {
+            TrackerEmptyState("Запишите вес, чтобы увидеть динамику")
         }
     }
 }
@@ -403,6 +453,17 @@ private fun WeightTrackerCard(weight: WeightProgress?, onAddWeight: () -> Unit) 
 @Composable
 private fun SleepTrackerCard(onAddSleep: () -> Unit) {
     val state = LocalAppState.current
+
+    // Real sleep history, chronological, last 7.
+    val entries: List<SleepEntry> = state.sleepLog
+        .sortedBy { it.dateKey }
+        .takeLast(7)
+    val hasData = entries.isNotEmpty()
+    val last = entries.lastOrNull()
+    val avgMin = if (hasData) entries.map { it.durationMinutes }.average().toInt() else 0
+    val goalMin = state.sleepGoalMinutes
+    val goalHoursText = if (goalMin % 60 == 0) "${goalMin / 60} ч" else formatHm(goalMin)
+
     Column(
         Modifier
             .fillMaxWidth()
@@ -426,40 +487,66 @@ private fun SleepTrackerCard(onAddSleep: () -> Unit) {
                     style = Wellness.typography.bodySmall,
                 )
                 Text(
-                    "7ч 24м",
+                    last?.let { formatHm(it.durationMinutes) } ?: "—",
                     color = Wellness.colors.text,
                     style = Wellness.typography.displayMedium,
                 )
             }
-            Box(
-                Modifier
-                    .background(WellnessColors.Water.copy(alpha = 0.16f), RoundedCornerShape(999.dp))
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
-            ) {
-                Text("отлично", color = WellnessColors.Water, style = Wellness.typography.labelMedium)
+            if (last != null) {
+                Box(
+                    Modifier
+                        .background(WellnessColors.Water.copy(alpha = 0.16f), RoundedCornerShape(999.dp))
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                ) {
+                    Text(
+                        sleepQualityLabel(last.quality),
+                        color = WellnessColors.Water,
+                        style = Wellness.typography.labelMedium,
+                    )
+                }
+                Box(Modifier.width(8.dp))
             }
-            Box(Modifier.width(8.dp))
             IconButtonRound(icon = "add-circle-bold-duotone", accent = true, onClick = onAddSleep)
         }
         Box(Modifier.height(14.dp))
-        SleepBars()
-        Box(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Row {
+        if (hasData) {
+            SleepBars(entries = entries, goalMin = goalMin)
+            Box(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row {
+                    Text(
+                        "Среднее ",
+                        color = Wellness.colors.muted,
+                        style = Wellness.typography.bodySmall,
+                    )
+                    Text(
+                        oneDecimalComma(avgMin / 60f) + " ч",
+                        color = Wellness.colors.text,
+                        style = Wellness.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 Text(
-                    "Среднее ",
+                    "цель $goalHoursText",
                     color = Wellness.colors.muted,
                     style = Wellness.typography.bodySmall,
                 )
-                Text(
-                    "7,1 ч",
-                    color = Wellness.colors.text,
-                    style = Wellness.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
             }
-            Text("цель 8 ч", color = Wellness.colors.muted, style = Wellness.typography.bodySmall)
+        } else {
+            TrackerEmptyState("Запишите сон, чтобы увидеть статистику")
         }
+    }
+}
+
+@Composable
+private fun TrackerEmptyState(text: String) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(110.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, color = Wellness.colors.muted, style = Wellness.typography.bodySmall)
     }
 }
 
@@ -480,9 +567,13 @@ private fun WeightChart(points: List<Float>, goalKg: Float) {
         val w = size.width
         val h = size.height
         val n = points.size
-        val stepX = w / (n - 1)
+        if (n == 0) return@Canvas
+        // With a single weigh-in there's no line — anchor the lone point in
+        // the middle of the canvas so it still reads sensibly.
+        fun xAt(i: Int): Float = if (n > 1) i * (w / (n - 1)) else w / 2f
+        fun yAt(v: Float): Float = h - ((v - min) / (max - min)) * h
         // Dashed goal line.
-        val goalY = h - ((goalKg - min) / (max - min)) * h
+        val goalY = yAt(goalKg)
         drawLine(
             color = muted.copy(alpha = 0.35f),
             start = Offset(0f, goalY),
@@ -493,51 +584,60 @@ private fun WeightChart(points: List<Float>, goalKg: Float) {
                 0f,
             ),
         )
-        // Build series path.
-        val path = Path()
-        points.forEachIndexed { i, v ->
-            val nx = i * stepX
-            val ny = h - ((v - min) / (max - min)) * h
-            if (i == 0) path.moveTo(nx, ny) else path.lineTo(nx, ny)
+        if (n > 1) {
+            // Build series path + filled area.
+            val path = Path()
+            points.forEachIndexed { i, v ->
+                if (i == 0) path.moveTo(xAt(i), yAt(v)) else path.lineTo(xAt(i), yAt(v))
+            }
+            val area = Path().apply {
+                addPath(path)
+                lineTo(w, h)
+                lineTo(0f, h)
+                close()
+            }
+            drawPath(area, color = color.copy(alpha = 0.10f))
+            drawPath(path, color = color, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
         }
-        val area = Path().apply {
-            addPath(path)
-            lineTo(w, h)
-            lineTo(0f, h)
-            close()
-        }
-        drawPath(area, color = color.copy(alpha = 0.10f))
-        drawPath(path, color = color, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
         points.forEachIndexed { i, v ->
-            val nx = i * stepX
-            val ny = h - ((v - min) / (max - min)) * h
-            drawCircle(color = color, radius = 4.dp.toPx(), center = Offset(nx, ny))
-            drawCircle(color = bg, radius = 1.5.dp.toPx(), center = Offset(nx, ny))
+            drawCircle(color = color, radius = 4.dp.toPx(), center = Offset(xAt(i), yAt(v)))
+            drawCircle(color = bg, radius = 1.5.dp.toPx(), center = Offset(xAt(i), yAt(v)))
         }
     }
 }
 
 @Composable
-private fun SleepBars() {
-    val state = LocalAppState.current
+private fun SleepBars(entries: List<SleepEntry>, goalMin: Int) {
+    // Scale bars against the larger of the goal and the longest night so a
+    // night that beats the goal still fits inside the 0..1 fraction.
+    val maxMin = (entries.maxOfOrNull { it.durationMinutes } ?: goalMin)
+        .coerceAtLeast(goalMin)
+        .coerceAtLeast(1)
+    val lastIndex = entries.lastIndex
     Row(
         Modifier.fillMaxWidth().height(110.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Bottom,
     ) {
-        state.sleep.forEach { d ->
+        entries.forEachIndexed { i, e ->
+            val fraction = (e.durationMinutes.toFloat() / maxMin).coerceIn(0f, 1f)
+            val highlighted = i == lastIndex
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(
                     Modifier
                         .width(22.dp)
-                        .height((20 + (d.height * 80)).dp)
+                        .height((20 + (fraction * 80)).dp)
                         .background(
-                            if (d.highlighted) WellnessColors.Water else WellnessColors.Water.copy(alpha = 0.35f),
+                            if (highlighted) WellnessColors.Water else WellnessColors.Water.copy(alpha = 0.35f),
                             RoundedCornerShape(999.dp),
                         ),
                 )
                 Box(Modifier.height(6.dp))
-                Text(d.label, color = Wellness.colors.muted, style = Wellness.typography.bodySmall)
+                Text(
+                    shortDow(e.dateKey),
+                    color = Wellness.colors.muted,
+                    style = Wellness.typography.bodySmall,
+                )
             }
         }
     }

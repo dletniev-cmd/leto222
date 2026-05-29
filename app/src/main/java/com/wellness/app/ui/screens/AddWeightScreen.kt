@@ -50,7 +50,8 @@ fun AddWeightScreen(onBack: () -> Unit) {
         onDismiss = onBack,
         trailingIcon = "check-bold",
         onTrailing = {
-            state.weight = kg + decimal / 10f
+            // Record a real weigh-in (appends to history + updates current).
+            state.logWeight(kg + decimal / 10f)
         },
     ) {
         // Headline numeric readout above the wheels. Tracks the live

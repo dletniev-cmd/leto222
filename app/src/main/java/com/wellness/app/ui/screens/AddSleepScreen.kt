@@ -21,10 +21,12 @@ import com.wellness.app.ui.components.FieldLabel
 import com.wellness.app.ui.components.NoFeedbackButton
 import com.wellness.app.ui.components.OverlayScreen
 import com.wellness.app.ui.icons.SolarIcon
+import com.wellness.app.ui.state.LocalAppState
 import com.wellness.app.ui.theme.Wellness
 
 @Composable
 fun AddSleepScreen(onBack: () -> Unit) {
+    val state = LocalAppState.current
     var fromH by remember { mutableStateOf(23) }
     var fromM by remember { mutableStateOf(30) }
     var toH by remember { mutableStateOf(7) }
@@ -35,7 +37,11 @@ fun AddSleepScreen(onBack: () -> Unit) {
         title = "Записать сон",
         onBack = onBack,
         primaryLabel = "Сохранить",
-        onPrimary = onBack,
+        onPrimary = {
+            // Persist a real sleep night, then dismiss.
+            state.logSleep(fromH * 60 + fromM, toH * 60 + toM, quality)
+            onBack()
+        },
     ) {
         FieldLabel("Лёг спать")
         TimePicker(fromH, fromM) { h, m -> fromH = h; fromM = m }
