@@ -1,5 +1,6 @@
 package com.wellness.app.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -25,9 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -36,7 +35,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +53,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wellness.app.ui.components.ElasticOverscroll
@@ -75,7 +74,6 @@ import com.wellness.app.ui.theme.WellnessColors
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
-import kotlinx.coroutines.launch
 
 // ── Shared helpers ─────────────────────────────────────────────────────
 
@@ -99,21 +97,11 @@ private fun sleepQualityLabel(q: Int): String =
 
 private fun oneDecimalComma(v: Float): String = "%.1f".format(v).replace('.', ',')
 
-// Sections of the redesigned screen, in pager order.
-private const val OVERVIEW = 0
-private const val WEIGHT = 1
-private const val SLEEP = 2
-private const val STEPS = 3
-private const val PAGE_COUNT = 4
-
-private data class Tab(val title: String, val icon: String)
-
-private val TABS = listOf(
-    Tab("Общий", "widget-bold-duotone"),
-    Tab("Вес", "scale-bold-duotone"),
-    Tab("Сон", "moon-sleep-bold-duotone"),
-    Tab("Шаги", "walking-bold-duotone"),
-)
+// Detail routes. The calm overview is shown when no metric is open (null);
+// tapping a metric row opens one of these full detail screens.
+private const val WEIGHT = 0
+private const val SLEEP = 1
+private const val STEPS = 2
 
 // Date windows for the period control, in days.
 private enum class Period(val title: String, val days: Long) {
@@ -122,23 +110,20 @@ private enum class Period(val title: String, val days: Long) {
     YEAR("Год", 366),
 }
 
-// SettingsHeader (~54dp) + chips row (8+40+8). Constant height so the page
-// content reserves the right top inset on frame 0.
-private val HeaderHeight = 110.dp
-
 /**
- * "Прогресс целей" — r50 redesign.
+ * "Прогресс целей" — r52, вариант «Спокойный».
  *
- * The four sections (Общий / Вес / Сон / Шаги) are a [HorizontalPager], so
- * they can be swiped between. A floating header (back + title + icon chips)
- * sits OVER the pager with no background plate, so content scrolls visibly
- * beneath it. The chip pill slides smoothly with the pager offset, and the
- * whole pager + chips get the app's iOS-style elastic translation overscroll
- * (same feel as the Plan rings) instead of Android's stretch.
+ * One calm vertical screen. No swipe, no top tabs. The top of the screen has a
+ * single focus — the overall progress ring with a short status line. Below it a
+ * quiet list of metrics (Вес / Сон / Шаги): each row shows an icon, the metric
+ * name, its current value, a small sparkline and a trend pill. Tapping a row
+ * opens that metric's full detail screen (big value + period control + chart +
+ * "Записать…" button) — charts are revealed on tap, so the overview itself
+ * stays light and easy to read.
  *
  * Weight + Sleep entry are root-level bottom sheets driven by [onAddWeight] /
  * [onAddSleep] — they do NOT push onto the overlay stack, so this screen never
- * re-mounts and the active tab / scroll position / period never snap back.
+ * re-mounts and the open detail / scroll position / period never snap back.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -149,154 +134,66 @@ fun ProgressGoalsScreen(
 ) {
     val state = LocalAppState.current
     val breakdown = calculateGoalProgress(state)
-    val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
 
-    val pager = rememberPagerState(pageCount = { PAGE_COUNT })
-    // One scroll state per page so each section keeps its own scroll position.
-    val scrolls = List(PAGE_COUNT) { rememberScrollState() }
+    // null = calm overview list; otherwise an open metric detail.
+    var detail by remember { mutableStateOf<Int?>(null) }
 
-    // Shared elastic overscroll for the pager: horizontal translation when
-    // swiping past the first/last page, vertical translation when a page is
-    // pulled past its top/bottom — no system stretch deformation.
-    val elastic = rememberElasticOverscroll(maxVertical = 56.dp, maxHorizontal = 44.dp)
+    // Hardware/gesture back returns to the overview from a detail screen.
+    BackHandler(enabled = detail != null) { detail = null }
 
+    // Fresh scroll state per view so each opens at the top.
+    val scroll = remember(detail) { ScrollState(0) }
+    val elastic = rememberElasticOverscroll(maxVertical = 56.dp, maxHorizontal = 0.dp)
     val topInset =
         WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 6.dp
 
-    val goToPage: (Int) -> Unit = { p -> scope.launch { pager.animateScrollToPage(p) } }
-
     Box(Modifier.fillMaxSize().background(Wellness.colors.bg)) {
-        // ── Scrolling content (pager) ──
         CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
             Box(Modifier.fillMaxSize().nestedScroll(elastic.connection)) {
-                HorizontalPager(
-                    state = pager,
-                    modifier = Modifier
+                Column(
+                    Modifier
                         .fillMaxSize()
-                        .graphicsLayer {
-                            translationX = elastic.horizontalOverscroll.floatValue
-                            translationY = elastic.verticalOverscroll.floatValue
-                        },
-                    beyondBoundsPageCount = 1,
-                ) { page ->
-                    Column(
-                        Modifier
-                            .fillMaxSize()
-                            .verticalScroll(scrolls[page])
-                            .padding(top = topInset + HeaderHeight, bottom = 160.dp),
-                    ) {
-                        when (page) {
+                        .graphicsLayer { translationY = elastic.verticalOverscroll.floatValue }
+                        .verticalScroll(scroll)
+                        .padding(top = topInset, bottom = 160.dp),
+                ) {
+                    val cur = detail
+                    if (cur == null) {
+                        SettingsHeader(title = "Прогресс целей", onBack = onBack)
+                        OverviewCalm(breakdown = breakdown, onOpen = { detail = it })
+                    } else {
+                        val title = when (cur) {
+                            WEIGHT -> "Вес"
+                            SLEEP -> "Сон"
+                            else -> "Шаги"
+                        }
+                        SettingsHeader(title = title, onBack = { detail = null })
+                        Box(Modifier.height(4.dp))
+                        when (cur) {
                             WEIGHT -> WeightSection(onAddWeight = onAddWeight)
                             SLEEP -> SleepSection(onAddSleep = onAddSleep)
-                            STEPS -> StepsSection()
-                            else -> OverviewSection(breakdown = breakdown, onSelectPage = goToPage)
-                        }
-                        Box(Modifier.height(24.dp))
-                    }
-                }
-            }
-        }
-
-        // ── Floating header (back + title + chips) over the content ──
-        Column(Modifier.fillMaxWidth().padding(top = topInset)) {
-            SettingsHeader(title = "Прогресс целей", onBack = onBack)
-            TabChips(
-                // Deferred reads: the pill position is read in the DRAW phase
-                // (graphicsLayer), and the active index in TabChips' own
-                // composition — so swiping never recomposes this whole screen
-                // (which would re-run calculateGoalProgress + every chart per frame).
-                pageFraction = { pager.currentPage + pager.currentPageOffsetFraction },
-                selectedPage = { pager.currentPage },
-                overscrollX = { elastic.horizontalOverscroll.floatValue },
-                onSelect = goToPage,
-            )
-        }
-    }
-}
-
-// ── Floating top chips ─────────────────────────────────────────────────
-
-/**
- * Four equal-width tab cells with a single accent pill that slides smoothly
- * with the pager. There is NO background strip — only the active pill is
- * painted, so the page content stays visible passing under the chips. The
- * whole row inherits the pager's horizontal elastic overscroll so it "pulls"
- * together with the content (the rubber-band feel, not Android's stretch).
- */
-@Composable
-private fun TabChips(
-    pageFraction: () -> Float,
-    selectedPage: () -> Int,
-    overscrollX: () -> Float,
-    onSelect: (Int) -> Unit,
-) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 8.dp)
-            .graphicsLayer { translationX = overscrollX() },
-    ) {
-        BoxWithConstraints(Modifier.fillMaxWidth().height(40.dp)) {
-            val n = TABS.size
-            val cell = maxWidth / n
-            val inset = 4.dp
-
-            // Sliding accent pill behind the active cell. Position is read in
-            // the DRAW phase (graphicsLayer) from the pageFraction lambda, so
-            // the pill follows the swipe smoothly with NO recomposition.
-            Box(
-                Modifier
-                    .width(cell - inset * 2)
-                    .fillMaxHeight()
-                    .graphicsLayer {
-                        val frac = pageFraction().coerceIn(0f, (n - 1).toFloat())
-                        translationX = cell.toPx() * frac + inset.toPx()
-                    }
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Wellness.colors.accent, RoundedCornerShape(999.dp)),
-            )
-
-            val selected = selectedPage()
-            Row(Modifier.fillMaxSize()) {
-                TABS.forEachIndexed { i, tab ->
-                    val active = i == selected
-                    val fg = if (active) Color.White else Wellness.colors.muted
-                    NoFeedbackButton(
-                        onClick = { onSelect(i) },
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                    ) {
-                        Row(
-                            Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            SolarIcon(name = tab.icon, tint = fg, size = 16.dp)
-                            Box(Modifier.width(5.dp))
-                            Text(
-                                tab.title,
-                                color = fg,
-                                style = Wellness.typography.titleSmall,
-                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                            )
+                            else -> StepsSection()
                         }
                     }
+                    Box(Modifier.height(24.dp))
                 }
             }
         }
     }
 }
 
-// ── Section: Общий ─────────────────────────────────────────────────────
+// ── Calm overview ──────────────────────────────────────────────────────
 
 @Composable
-private fun OverviewSection(breakdown: GoalBreakdown, onSelectPage: (Int) -> Unit) {
+private fun OverviewCalm(breakdown: GoalBreakdown, onOpen: (Int) -> Unit) {
     val state = LocalAppState.current
     val percent = (breakdown.overall * 100f).toInt()
 
-    // Weekly weight delta from real weigh-ins.
     val weightSorted = state.weightLog.sortedBy { it.dateKey }
-    val weeklyNote = run {
+    val curWeight = weightSorted.lastOrNull()?.kg
+
+    // Weekly weight delta from real weigh-ins (drives the weight trend pill).
+    val weeklyDelta: Float? = run {
         val last = weightSorted.lastOrNull()
         if (last == null || weightSorted.size < 2) null
         else {
@@ -304,79 +201,21 @@ private fun OverviewSection(breakdown: GoalBreakdown, onSelectPage: (Int) -> Uni
             val ref = weekAgo?.let { wa ->
                 weightSorted.lastOrNull { e -> parseDate(e.dateKey)?.let { it <= wa } == true }
             } ?: weightSorted.first()
-            val d = last.kg - ref.kg
-            if (abs(d) < 0.05f) "стабильно" else "${if (d < 0) "↓" else "↑"} ${oneDecimalComma(abs(d))} кг"
-        }
-    }
-    val weightDeltaColor =
-        if ((weightSorted.lastOrNull()?.kg ?: 0f) <= (weightSorted.firstOrNull()?.kg ?: 0f))
-            WellnessColors.Mint else WellnessColors.Pink
-
-    val curWeight = weightSorted.lastOrNull()?.kg
-    val lastSleep = state.sleepLog.sortedBy { it.dateKey }.lastOrNull()
-    val habitsToday = state.habitsToday()
-    val habitsDone = habitsToday.count { it.isDoneOn(com.wellness.app.ui.state.Dates.todayKey()) }
-
-    HeroCard(percent = percent, weeklyNote = weeklyNote, weeklyColor = weightDeltaColor, progress = breakdown.overall)
-
-    Box(Modifier.height(18.dp))
-    SectionLabel("Разделы")
-    Box(Modifier.height(10.dp))
-
-    Column(Modifier.screenHPad(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OverviewTile(
-                modifier = Modifier.weight(1f),
-                icon = "scale-bold-duotone", color = Wellness.colors.accent, title = "Вес",
-                value = curWeight?.let { "${oneDecimalComma(it)} кг" } ?: "—",
-                sub = weeklyNote?.let { "$it за неделю" } ?: "нет записей",
-                onClick = { onSelectPage(WEIGHT) },
-            )
-            OverviewTile(
-                modifier = Modifier.weight(1f),
-                icon = "moon-sleep-bold-duotone", color = WellnessColors.Water, title = "Сон",
-                value = lastSleep?.let { formatHm(it.durationMinutes) } ?: "—",
-                sub = lastSleep?.let { sleepQualityLabel(it.quality) } ?: "нет записей",
-                onClick = { onSelectPage(SLEEP) },
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OverviewTile(
-                modifier = Modifier.weight(1f),
-                icon = "walking-bold-duotone", color = WellnessColors.Mint, title = "Шаги",
-                value = "—", sub = "скоро",
-                onClick = { onSelectPage(STEPS) },
-            )
-            OverviewTile(
-                modifier = Modifier.weight(1f),
-                icon = "fire-bold-duotone", color = WellnessColors.Orange, title = "Привычки",
-                value = if (habitsToday.isEmpty()) "—" else "$habitsDone / ${habitsToday.size}",
-                sub = "сегодня",
-                onClick = null,
-            )
+            last.kg - ref.kg
         }
     }
 
-    Box(Modifier.height(18.dp))
-    SectionLabel("Эта неделя")
-    Box(Modifier.height(10.dp))
-    WeekSummaryCard(breakdown = breakdown, weeklyNote = weeklyNote, weeklyColor = weightDeltaColor)
-}
+    val sleepSorted = state.sleepLog.sortedBy { it.dateKey }
+    val lastSleep = sleepSorted.lastOrNull()
 
-@Composable
-private fun HeroCard(percent: Int, weeklyNote: String?, weeklyColor: Color, progress: Float) {
+    // ── Single focus: overall ring + short status line ──
     Row(
-        Modifier
-            .fillMaxWidth()
-            .screenHPad()
-            .clip(RoundedCornerShape(22.dp))
-            .background(Wellness.colors.container, RoundedCornerShape(22.dp))
-            .padding(18.dp),
+        Modifier.fillMaxWidth().screenHPad().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(contentAlignment = Alignment.Center) {
             ProgressRing(
-                progress = progress,
+                progress = breakdown.overall,
                 color = Wellness.colors.accent,
                 size = 92.dp,
                 strokeWidth = 9.dp,
@@ -389,34 +228,140 @@ private fun HeroCard(percent: Int, weeklyNote: String?, weeklyColor: Color, prog
                 fontSize = 22.sp,
             )
         }
-        Box(Modifier.width(18.dp))
+        Box(Modifier.width(20.dp))
         Column(Modifier.weight(1f)) {
+            Text(
+                if (percent >= 50) "Идёшь по плану" else "Только начало",
+                color = Wellness.colors.text,
+                style = Wellness.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Box(Modifier.height(3.dp))
             Text(
                 "Общий прогресс целей",
                 color = Wellness.colors.muted,
-                style = Wellness.typography.bodySmall,
+                style = Wellness.typography.bodyMedium,
             )
-            Box(Modifier.height(2.dp))
-            Text(
-                "Так держать 💪",
-                color = Wellness.colors.text,
-                style = Wellness.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            if (weeklyNote != null) {
-                Box(Modifier.height(8.dp))
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(weeklyColor.copy(alpha = 0.16f), RoundedCornerShape(999.dp))
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                ) {
-                    Text(
-                        "$weeklyNote за неделю",
-                        color = weeklyColor,
-                        style = Wellness.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+            if (weeklyDelta != null && abs(weeklyDelta) >= 0.05f) {
+                val loss = weeklyDelta < 0f
+                Text(
+                    "За неделю ${if (loss) "↓" else "↑"} ${oneDecimalComma(abs(weeklyDelta))} кг",
+                    color = if (loss) WellnessColors.Mint else WellnessColors.Pink,
+                    style = Wellness.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+
+    Box(Modifier.height(20.dp))
+    CalmSectionLabel("Мои показатели")
+    Box(Modifier.height(12.dp))
+
+    Column(Modifier.screenHPad(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Вес
+        MetricRow(
+            icon = "scale-bold-duotone",
+            color = Wellness.colors.accent,
+            name = "Вес",
+            value = curWeight?.let { "${oneDecimalComma(it)} кг" } ?: "—",
+            spark = weightSorted.takeLast(7).map { it.kg }.takeIf { it.size >= 2 },
+            trend = weeklyDelta?.takeIf { abs(it) >= 0.05f }?.let {
+                val loss = it < 0f
+                Triple(
+                    "${if (loss) "↓" else "↑"} ${oneDecimalComma(abs(it))} кг",
+                    if (loss) WellnessColors.Mint else WellnessColors.Pink,
+                    true,
+                )
+            },
+            onClick = { onOpen(WEIGHT) },
+        )
+        // Сон
+        MetricRow(
+            icon = "moon-sleep-bold-duotone",
+            color = WellnessColors.Water,
+            name = "Сон",
+            value = lastSleep?.let { formatHm(it.durationMinutes) } ?: "—",
+            spark = sleepSorted.takeLast(7).map { it.durationMinutes.toFloat() }
+                .takeIf { it.size >= 2 && it.any { v -> v > 0f } },
+            trend = lastSleep?.let {
+                Triple(sleepQualityLabel(it.quality), WellnessColors.Water, false)
+            },
+            onClick = { onOpen(SLEEP) },
+        )
+        // Шаги (coming soon)
+        MetricRow(
+            icon = "walking-bold-duotone",
+            color = WellnessColors.Mint,
+            name = "Шаги",
+            value = "—",
+            spark = null,
+            trend = Triple("скоро", Wellness.colors.muted, false),
+            onClick = { onOpen(STEPS) },
+        )
+    }
+}
+
+@Composable
+private fun CalmSectionLabel(text: String) {
+    Text(
+        text.uppercase(),
+        color = Wellness.colors.muted,
+        style = Wellness.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.screenHPad().padding(start = 6.dp),
+    )
+}
+
+/**
+ * One quiet metric row: icon · name + value · sparkline + trend pill, tappable
+ * to open the metric detail. [trend] is (text, color, withArrow) — withArrow
+ * shows a small caret for the weight delta; sleep/steps pills carry no arrow.
+ */
+@Composable
+private fun MetricRow(
+    icon: String,
+    color: Color,
+    name: String,
+    value: String,
+    spark: List<Float>?,
+    trend: Triple<String, Color, Boolean>?,
+    onClick: () -> Unit,
+) {
+    NoFeedbackButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(22.dp))
+                .background(Wellness.colors.container, RoundedCornerShape(22.dp))
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .background(color.copy(alpha = 0.16f), RoundedCornerShape(14.dp)),
+                contentAlignment = Alignment.Center,
+            ) { SolarIcon(name = icon, tint = color, size = 24.dp) }
+            Box(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(name, color = Wellness.colors.muted, style = Wellness.typography.bodySmall)
+                Box(Modifier.height(2.dp))
+                Text(
+                    value,
+                    color = Wellness.colors.text,
+                    style = Wellness.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Box(Modifier.width(10.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                if (spark != null) {
+                    Sparkline(data = spark, color = color, width = 82.dp, height = 30.dp)
+                    Box(Modifier.height(8.dp))
+                }
+                if (trend != null) {
+                    CalmTrendPill(text = trend.first, color = trend.second, withArrow = trend.third)
                 }
             }
         }
@@ -424,92 +369,52 @@ private fun HeroCard(percent: Int, weeklyNote: String?, weeklyColor: Color, prog
 }
 
 @Composable
-private fun OverviewTile(
-    icon: String,
-    color: Color,
-    title: String,
-    value: String,
-    sub: String,
-    onClick: (() -> Unit)?,
-    modifier: Modifier = Modifier,
-) {
-    val content: @Composable () -> Unit = {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(Wellness.colors.container, RoundedCornerShape(20.dp))
-                .padding(16.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(32.dp)
-                        .background(color.copy(alpha = 0.18f), RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center,
-                ) { SolarIcon(name = icon, tint = color, size = 18.dp) }
-                Box(Modifier.width(8.dp))
-                Text(title, color = Wellness.colors.muted, style = Wellness.typography.bodySmall)
-            }
-            Box(Modifier.height(10.dp))
-            Text(
-                value,
-                color = Wellness.colors.text,
-                style = Wellness.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Box(Modifier.height(2.dp))
-            Text(sub, color = Wellness.colors.muted, style = Wellness.typography.bodySmall)
-        }
-    }
-    if (onClick != null) {
-        NoFeedbackButton(onClick = onClick, modifier = modifier) { content() }
-    } else {
-        Box(modifier) { content() }
-    }
-}
-
-@Composable
-private fun WeekSummaryCard(breakdown: GoalBreakdown, weeklyNote: String?, weeklyColor: Color) {
-    val state = LocalAppState.current
-    val sleep7 = state.sleepLog.sortedBy { it.dateKey }.takeLast(7)
-    val avgSleep = if (sleep7.isEmpty()) null else sleep7.map { it.durationMinutes }.average().toInt()
-
-    val rows = buildList {
-        add(Triple("Средний сон", avgSleep?.let { oneDecimalComma(it / 60f) + " ч" } ?: "—", WellnessColors.Water))
-        add(Triple("Изменение веса", weeklyNote ?: "—", weeklyColor))
-        breakdown.habits?.let { add(Triple("Привычки сегодня", "${it.done} / ${it.total}", WellnessColors.Orange)) }
-        breakdown.tasks?.let { add(Triple("Задачи", "${it.done} / ${it.total}", Wellness.colors.muted)) }
-    }
-    Column(
+private fun CalmTrendPill(text: String, color: Color, withArrow: Boolean) {
+    Box(
         Modifier
-            .fillMaxWidth()
-            .screenHPad()
-            .clip(RoundedCornerShape(22.dp))
-            .background(Wellness.colors.container, RoundedCornerShape(22.dp))
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .clip(RoundedCornerShape(999.dp))
+            .background(color.copy(alpha = 0.16f), RoundedCornerShape(999.dp))
+            .padding(horizontal = if (withArrow) 9.dp else 10.dp, vertical = 5.dp),
     ) {
-        rows.forEachIndexed { i, (label, value, color) ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 11.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(label, color = Wellness.colors.muted, style = Wellness.typography.bodyMedium)
-                Text(value, color = color, style = Wellness.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-            }
-            if (i != rows.lastIndex) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(Wellness.colors.track),
-                )
-            }
-        }
+        Text(
+            text,
+            color = color,
+            style = Wellness.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
+
+/**
+ * Tiny smooth sparkline (no axes) ending in a filled dot — mirrors the web
+ * prototype's Spark. Draws via the shared [smoothPath] cubic builder.
+ */
+@Composable
+private fun Sparkline(data: List<Float>, color: Color, width: Dp, height: Dp) {
+    Canvas(Modifier.size(width, height)) {
+        val pad = 4.dp.toPx()
+        val min = data.min()
+        val max = data.max()
+        val range = (max - min).takeIf { it > 0.0001f } ?: 1f
+        val w = size.width
+        val h = size.height
+        val pts = data.mapIndexed { i, v ->
+            val x = if (data.size > 1) pad + i * (w - pad * 2) / (data.size - 1) else w / 2f
+            val y = pad + (1f - (v - min) / range) * (h - pad * 2)
+            Offset(x, y)
+        }
+        if (pts.size >= 2) {
+            drawPath(
+                smoothPath(pts),
+                color = color,
+                style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round),
+            )
+        }
+        val last = pts.last()
+        drawCircle(color = color, radius = 3.2.dp.toPx(), center = last)
+    }
+}
+
 
 // ── Section: Вес ───────────────────────────────────────────────────────
 
