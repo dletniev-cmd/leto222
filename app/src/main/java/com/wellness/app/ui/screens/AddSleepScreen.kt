@@ -19,11 +19,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.wellness.app.ui.components.FieldLabel
 import com.wellness.app.ui.components.NoFeedbackButton
-import com.wellness.app.ui.components.OverlayScreen
+import com.wellness.app.ui.components.WellnessBottomSheet
 import com.wellness.app.ui.icons.SolarIcon
 import com.wellness.app.ui.state.LocalAppState
 import com.wellness.app.ui.theme.Wellness
 
+/**
+ * Sleep entry as a modal bottom sheet (same surface as the weight sheet). The
+ * "Сохранить" button persists a real sleep night and dismisses with the
+ * sheet's shared enter/exit animation.
+ */
 @Composable
 fun AddSleepScreen(onBack: () -> Unit) {
     val state = LocalAppState.current
@@ -33,14 +38,13 @@ fun AddSleepScreen(onBack: () -> Unit) {
     var toM by remember { mutableStateOf(0) }
     var quality by remember { mutableStateOf(2) }
 
-    OverlayScreen(
+    WellnessBottomSheet(
         title = "Записать сон",
-        onBack = onBack,
+        onDismiss = onBack,
         primaryLabel = "Сохранить",
         onPrimary = {
-            // Persist a real sleep night, then dismiss.
+            // Persist a real sleep night. WellnessBottomSheet dismisses for us.
             state.logSleep(fromH * 60 + fromM, toH * 60 + toM, quality)
-            onBack()
         },
     ) {
         FieldLabel("Лёг спать")
@@ -85,9 +89,6 @@ private fun TimePicker(hour: Int, minute: Int, onChange: (Int, Int) -> Unit) {
 
 @Composable
 private fun Stepper(value: Int, min: Int, max: Int, step: Int = 1, onChange: (Int) -> Unit) {
-    // Wrap-around helper. Standard modulo with the +span tweak so negative
-    // remainders (Kotlin's `%` is sign-preserving) still land on the positive
-    // side of the range — e.g. minute 0, step 5 going DOWN wraps to 55, not 4.
     fun wrap(next: Int): Int {
         val span = max - min + 1
         return ((next - min) % span + span) % span + min

@@ -8,9 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -137,17 +135,13 @@ fun WellnessApp() {
     val underlay: AddOverlay? = if (overlayStack.size >= 2) overlayStack[overlayStack.size - 2] else null
     val push: (AddOverlay) -> Unit = { o -> overlayStack = overlayStack + o; lastAction = "push" }
     val pop: () -> Unit = { overlayStack = overlayStack.dropLast(1); lastAction = "pop" }
-    // Hoisted scroll position for the Progress-Goals screen. The SAME
-    // instance is fed to both its "top overlay" and "underlay" rendering, so
-    // opening the weight/sleep adder (which moves this screen from the top
-    // slot to the underlay slot) no longer creates a fresh scroll state that
-    // snaps the page back to the top.
-    val progressScroll = rememberScrollState()
-    // Hoisted for the same reason: which tab (Общий/Вес/Сон/Шаги) is open on
-    // the Progress-Goals screen must survive the screen moving between the top
-    // and underlay slots (e.g. opening the sleep adder), otherwise it would
-    // reset to "Общий" every time.
-    val progressSection = remember { androidx.compose.runtime.mutableStateOf("overview") }
+    // Root-level bottom sheet (weight / sleep) opened from inside the
+    // Progress-Goals screen. Rendered as a sibling ABOVE the overlay stack
+    // rather than pushed onto it — so Progress-Goals stays the active overlay
+    // and never re-mounts. That's what keeps its active tab, per-section
+    // scroll position and period from snapping back when the user taps
+    // "+ вес" / "+ сон" (the jump the user reported). null = no sheet open.
+    var rootSheet by remember { mutableStateOf<AddOverlay?>(null) }
     val parallax = rememberParallaxProgress()
     // Sink for nested overlays. When the stack is >= 2 levels deep the
     // active top RoundedSlideOverlay must NOT drive the host parallax,
@@ -285,8 +279,6 @@ fun WellnessApp() {
                         current = u,
                         animatedBack = {},
                         onPushLogs = {},
-                        progressScrollState = progressScroll,
-                        progressSectionState = progressSection,
                     )
                 }
             }
@@ -315,15 +307,26 @@ fun WellnessApp() {
                             current = current,
                             animatedBack = animatedBack,
                             onPushLogs = { push(AddOverlay.Logs) },
-                            onPushWeight = { push(AddOverlay.Weight) },
-                            onPushSleep = { push(AddOverlay.Sleep) },
-                            progressScrollState = progressScroll,
-                            progressSectionState = progressSection,
+                            // Weight / sleep adders open as a ROOT bottom sheet
+                            // (rootSheet) instead of being pushed — keeps the
+                            // Progress-Goals screen mounted underneath.
+                            onPushWeight = { rootSheet = AddOverlay.Weight },
+                            onPushSleep = { rootSheet = AddOverlay.Sleep },
                         )
                     }
                 }
             }
         }
+        // Root-level bottom sheets (weight / sleep). Rendered LAST so they
+        // sit on top of every overlay and the navbar. Driven by `rootSheet`
+        // rather than the overlay stack, so the screen that opened them
+        // (Progress-Goals) stays mounted and keeps its scroll/tab/period.
+        when (rootSheet) {
+            AddOverlay.Weight -> AddWeightScreen(onBack = { rootSheet = null })
+            AddOverlay.Sleep -> AddSleepScreen(onBack = { rootSheet = null })
+            else -> {}
+        }
+
         // Crash reports are written to disk by CrashReporter on uncaught
         // exception and surfaced passively via Profile → Другое → Логи.
         // The previous launch-time dialog interrupted the cold-start flow
@@ -345,8 +348,6 @@ private fun OverlayContent(
     onPushLogs: () -> Unit,
     onPushWeight: () -> Unit = {},
     onPushSleep: () -> Unit = {},
-    progressScrollState: ScrollState? = null,
-    progressSectionState: androidx.compose.runtime.MutableState<String>? = null,
 ) {
     when (current) {
         AddOverlay.Habit -> AddHabitScreen(onBack = animatedBack)
@@ -366,8 +367,6 @@ private fun OverlayContent(
             onBack = animatedBack,
             onAddWeight = onPushWeight,
             onAddSleep = onPushSleep,
-            scrollState = progressScrollState,
-            sectionState = progressSectionState,
         )
     }
 }

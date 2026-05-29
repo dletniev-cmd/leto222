@@ -1,39 +1,55 @@
 package com.wellness.app.ui.screens
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -41,11 +57,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.wellness.app.ui.components.ElasticOverscroll
 import com.wellness.app.ui.components.IconButtonRound
 import com.wellness.app.ui.components.NoFeedbackButton
 import com.wellness.app.ui.components.ProgressRing
-import com.wellness.app.ui.components.ScreenScaffold
 import com.wellness.app.ui.components.SettingsHeader
+import com.wellness.app.ui.components.rememberElasticOverscroll
 import com.wellness.app.ui.components.screenHPad
 import com.wellness.app.ui.icons.SolarIcon
 import com.wellness.app.ui.state.GoalBreakdown
@@ -58,6 +75,7 @@ import com.wellness.app.ui.theme.WellnessColors
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 // ── Shared helpers ─────────────────────────────────────────────────────
 
@@ -81,129 +99,179 @@ private fun sleepQualityLabel(q: Int): String =
 
 private fun oneDecimalComma(v: Float): String = "%.1f".format(v).replace('.', ',')
 
-// Sections of the redesigned screen.
-private const val OVERVIEW = "overview"
-private const val WEIGHT = "weight"
-private const val SLEEP = "sleep"
-private const val STEPS = "steps"
+// Sections of the redesigned screen, in pager order.
+private const val OVERVIEW = 0
+private const val WEIGHT = 1
+private const val SLEEP = 2
+private const val STEPS = 3
+private const val PAGE_COUNT = 4
 
-private data class Tab(val key: String, val title: String, val icon: String)
+private data class Tab(val title: String, val icon: String)
 
 private val TABS = listOf(
-    Tab(OVERVIEW, "Общий", "widget-bold-duotone"),
-    Tab(WEIGHT, "Вес", "scale-bold-duotone"),
-    Tab(SLEEP, "Сон", "moon-sleep-bold-duotone"),
-    Tab(STEPS, "Шаги", "walking-bold-duotone"),
+    Tab("Общий", "widget-bold-duotone"),
+    Tab("Вес", "scale-bold-duotone"),
+    Tab("Сон", "moon-sleep-bold-duotone"),
+    Tab("Шаги", "walking-bold-duotone"),
 )
 
 // Date windows for the period control, in days.
-private enum class Period(val key: String, val title: String, val days: Long) {
-    WEEK("week", "Неделя", 7),
-    MONTH("month", "Месяц", 31),
-    YEAR("year", "Год", 366),
+private enum class Period(val title: String, val days: Long) {
+    WEEK("Неделя", 7),
+    MONTH("Месяц", 31),
+    YEAR("Год", 366),
 }
 
+// SettingsHeader (~54dp) + chips row (8+40+8). Constant height so the page
+// content reserves the right top inset on frame 0.
+private val HeaderHeight = 110.dp
+
 /**
- * "Прогресс целей" — r49 redesign.
+ * "Прогресс целей" — r50 redesign.
  *
- * Top floating icon-chips (Общий / Вес / Сон / Шаги) sit OVER the scrolling
- * content with no background plate, so content is visible passing under them
- * (the [ScreenScaffold] pinned-header path renders the header transparent and
- * scrolls the body beneath it). Each section is its own composable:
- *  - Общий: overall ring + tappable section tiles + weekly summary.
- *  - Вес: big current weight (no container), period control, a full-bleed
- *    swipeable line chart (drag to scrub exact values), stat tiles, log.
- *  - Сон: big last-night value, period control, full-bleed bar chart, stats.
- *  - Шаги: "coming soon" — no pedometer data source yet, so we show an honest
- *    empty state instead of fabricated step counts.
+ * The four sections (Общий / Вес / Сон / Шаги) are a [HorizontalPager], so
+ * they can be swiped between. A floating header (back + title + icon chips)
+ * sits OVER the pager with no background plate, so content scrolls visibly
+ * beneath it. The chip pill slides smoothly with the pager offset, and the
+ * whole pager + chips get the app's iOS-style elastic translation overscroll
+ * (same feel as the Plan rings) instead of Android's stretch.
+ *
+ * Weight + Sleep entry are root-level bottom sheets driven by [onAddWeight] /
+ * [onAddSleep] — they do NOT push onto the overlay stack, so this screen never
+ * re-mounts and the active tab / scroll position / period never snap back.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ProgressGoalsScreen(
     onBack: () -> Unit,
     onAddWeight: () -> Unit = {},
     onAddSleep: () -> Unit = {},
-    scrollState: ScrollState? = null,
-    // Hoisted by the host so the active tab survives the screen moving between
-    // its top and underlay slots (opening the sleep adder). Falls back to a
-    // local state when rendered standalone.
-    sectionState: androidx.compose.runtime.MutableState<String>? = null,
 ) {
     val state = LocalAppState.current
     val breakdown = calculateGoalProgress(state)
-    val sectionHolder = sectionState ?: remember { mutableStateOf(OVERVIEW) }
-    var section by sectionHolder
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
 
-    // One scroll state per section so switching tabs starts each at the top
-    // rather than inheriting a deep scroll from another, taller section.
-    val scrollOverview = rememberScrollState()
-    val scrollWeight = rememberScrollState()
-    val scrollSleep = rememberScrollState()
-    val scrollSteps = rememberScrollState()
-    val activeScroll = when (section) {
-        WEIGHT -> scrollWeight
-        SLEEP -> scrollSleep
-        STEPS -> scrollSteps
-        else -> scrollState ?: scrollOverview
-    }
+    val pager = rememberPagerState(pageCount = { PAGE_COUNT })
+    // One scroll state per page so each section keeps its own scroll position.
+    val scrolls = List(PAGE_COUNT) { rememberScrollState() }
+
+    // Shared elastic overscroll for the pager: horizontal translation when
+    // swiping past the first/last page, vertical translation when a page is
+    // pulled past its top/bottom — no system stretch deformation.
+    val elastic = rememberElasticOverscroll(maxVertical = 56.dp, maxHorizontal = 44.dp)
+
+    val topInset =
+        WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 6.dp
+
+    val goToPage: (Int) -> Unit = { p -> scope.launch { pager.animateScrollToPage(p) } }
 
     Box(Modifier.fillMaxSize().background(Wellness.colors.bg)) {
-        ScreenScaffold(
-            scrollState = activeScroll,
-            topPadding = 0.dp,
-            pinnedHeader = {
-                Column {
-                    SettingsHeader(title = "Прогресс целей", onBack = onBack)
-                    TabChips(selected = section, onSelect = { section = it })
+        // ── Scrolling content (pager) ──
+        CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+            Box(Modifier.fillMaxSize().nestedScroll(elastic.connection)) {
+                HorizontalPager(
+                    state = pager,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            translationX = elastic.horizontalOverscroll.floatValue
+                            translationY = elastic.verticalOverscroll.floatValue
+                        },
+                    beyondBoundsPageCount = 1,
+                ) { page ->
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(scrolls[page])
+                            .padding(top = topInset + HeaderHeight, bottom = 160.dp),
+                    ) {
+                        when (page) {
+                            WEIGHT -> WeightSection(onAddWeight = onAddWeight)
+                            SLEEP -> SleepSection(onAddSleep = onAddSleep)
+                            STEPS -> StepsSection()
+                            else -> OverviewSection(breakdown = breakdown, onSelectPage = goToPage)
+                        }
+                        Box(Modifier.height(24.dp))
+                    }
                 }
-            },
-            // SettingsHeader (~54dp) + chips row (~56dp incl. spacing). Constant
-            // height keeps the jank-free fast path in the scaffold.
-            pinnedHeaderHeight = 110.dp,
-        ) {
-            when (section) {
-                WEIGHT -> WeightSection(onAddWeight = onAddWeight)
-                SLEEP -> SleepSection(onAddSleep = onAddSleep)
-                STEPS -> StepsSection()
-                else -> OverviewSection(breakdown = breakdown, onSelectSection = { section = it })
             }
-            Box(Modifier.height(24.dp))
+        }
+
+        // ── Floating header (back + title + chips) over the content ──
+        Column(Modifier.fillMaxWidth().padding(top = topInset)) {
+            SettingsHeader(title = "Прогресс целей", onBack = onBack)
+            TabChips(
+                pageFraction = pager.currentPage + pager.currentPageOffsetFraction,
+                selectedPage = pager.currentPage,
+                overscrollX = { elastic.horizontalOverscroll.floatValue },
+                onSelect = goToPage,
+            )
         }
     }
 }
 
 // ── Floating top chips ─────────────────────────────────────────────────
 
+/**
+ * Four equal-width tab cells with a single accent pill that slides smoothly
+ * with the pager. There is NO background strip — only the active pill is
+ * painted, so the page content stays visible passing under the chips. The
+ * whole row inherits the pager's horizontal elastic overscroll so it "pulls"
+ * together with the content (the rubber-band feel, not Android's stretch).
+ */
 @Composable
-private fun TabChips(selected: String, onSelect: (String) -> Unit) {
-    Row(
+private fun TabChips(
+    pageFraction: Float,
+    selectedPage: Int,
+    overscrollX: () -> Float,
+    onSelect: (Int) -> Unit,
+) {
+    Box(
         Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .graphicsLayer { translationX = overscrollX() },
     ) {
-        TABS.forEach { tab ->
-            val active = tab.key == selected
-            // Active = solid accent pill with white content. Inactive = soft
-            // track pill. No strip behind the row, so content scrolls under.
-            val bg = if (active) Wellness.colors.accent else Wellness.colors.track
-            val fg = if (active) Color.White else Wellness.colors.muted
-            NoFeedbackButton(onClick = { onSelect(tab.key) }) {
-                Row(
-                    Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(bg, RoundedCornerShape(999.dp))
-                        .padding(horizontal = 14.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    SolarIcon(name = tab.icon, tint = fg, size = 17.dp)
-                    Box(Modifier.width(6.dp))
-                    Text(
-                        tab.title,
-                        color = fg,
-                        style = Wellness.typography.titleSmall,
-                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                    )
+        BoxWithConstraints(Modifier.fillMaxWidth().height(40.dp)) {
+            val n = TABS.size
+            val cell = maxWidth / n
+            val inset = 4.dp
+            val frac = pageFraction.coerceIn(0f, (n - 1).toFloat())
+
+            // Sliding accent pill behind the active cell.
+            Box(
+                Modifier
+                    .offset(x = cell * frac + inset)
+                    .width(cell - inset * 2)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(Wellness.colors.accent, RoundedCornerShape(999.dp)),
+            )
+
+            Row(Modifier.fillMaxSize()) {
+                TABS.forEachIndexed { i, tab ->
+                    val active = i == selectedPage
+                    val fg = if (active) Color.White else Wellness.colors.muted
+                    NoFeedbackButton(
+                        onClick = { onSelect(i) },
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    ) {
+                        Row(
+                            Modifier.fillMaxSize(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            SolarIcon(name = tab.icon, tint = fg, size = 16.dp)
+                            Box(Modifier.width(5.dp))
+                            Text(
+                                tab.title,
+                                color = fg,
+                                style = Wellness.typography.titleSmall,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -213,7 +281,7 @@ private fun TabChips(selected: String, onSelect: (String) -> Unit) {
 // ── Section: Общий ─────────────────────────────────────────────────────
 
 @Composable
-private fun OverviewSection(breakdown: GoalBreakdown, onSelectSection: (String) -> Unit) {
+private fun OverviewSection(breakdown: GoalBreakdown, onSelectPage: (Int) -> Unit) {
     val state = LocalAppState.current
     val percent = (breakdown.overall * 100f).toInt()
 
@@ -235,20 +303,17 @@ private fun OverviewSection(breakdown: GoalBreakdown, onSelectSection: (String) 
         if ((weightSorted.lastOrNull()?.kg ?: 0f) <= (weightSorted.firstOrNull()?.kg ?: 0f))
             WellnessColors.Mint else WellnessColors.Pink
 
-    // Tile values from real data.
     val curWeight = weightSorted.lastOrNull()?.kg
     val lastSleep = state.sleepLog.sortedBy { it.dateKey }.lastOrNull()
     val habitsToday = state.habitsToday()
     val habitsDone = habitsToday.count { it.isDoneOn(com.wellness.app.ui.state.Dates.todayKey()) }
 
-    // Hero
     HeroCard(percent = percent, weeklyNote = weeklyNote, weeklyColor = weightDeltaColor, progress = breakdown.overall)
 
     Box(Modifier.height(18.dp))
     SectionLabel("Разделы")
     Box(Modifier.height(10.dp))
 
-    // 2×2 tiles
     Column(Modifier.screenHPad(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OverviewTile(
@@ -256,14 +321,14 @@ private fun OverviewSection(breakdown: GoalBreakdown, onSelectSection: (String) 
                 icon = "scale-bold-duotone", color = Wellness.colors.accent, title = "Вес",
                 value = curWeight?.let { "${oneDecimalComma(it)} кг" } ?: "—",
                 sub = weeklyNote?.let { "$it за неделю" } ?: "нет записей",
-                onClick = { onSelectSection(WEIGHT) },
+                onClick = { onSelectPage(WEIGHT) },
             )
             OverviewTile(
                 modifier = Modifier.weight(1f),
                 icon = "moon-sleep-bold-duotone", color = WellnessColors.Water, title = "Сон",
                 value = lastSleep?.let { formatHm(it.durationMinutes) } ?: "—",
                 sub = lastSleep?.let { sleepQualityLabel(it.quality) } ?: "нет записей",
-                onClick = { onSelectSection(SLEEP) },
+                onClick = { onSelectPage(SLEEP) },
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -271,7 +336,7 @@ private fun OverviewSection(breakdown: GoalBreakdown, onSelectSection: (String) 
                 modifier = Modifier.weight(1f),
                 icon = "walking-bold-duotone", color = WellnessColors.Mint, title = "Шаги",
                 value = "—", sub = "скоро",
-                onClick = { onSelectSection(STEPS) },
+                onClick = { onSelectPage(STEPS) },
             )
             OverviewTile(
                 modifier = Modifier.weight(1f),
@@ -287,9 +352,6 @@ private fun OverviewSection(breakdown: GoalBreakdown, onSelectSection: (String) 
     SectionLabel("Эта неделя")
     Box(Modifier.height(10.dp))
     WeekSummaryCard(breakdown = breakdown, weeklyNote = weeklyNote, weeklyColor = weightDeltaColor)
-
-    Box(Modifier.height(18.dp))
-    FormulaPlate()
 }
 
 @Composable
@@ -459,7 +521,6 @@ private fun WeightSection(onAddWeight: () -> Unit) {
     val avg = if (hasData) points.average().toFloat() else 0f
     val remaining = (current - goal).coerceAtLeast(0f)
 
-    // Big number, NOT in a container.
     Column(Modifier.screenHPad().padding(start = 4.dp)) {
         Text("Текущий вес", color = Wellness.colors.muted, style = Wellness.typography.bodySmall)
         Row(verticalAlignment = Alignment.Bottom) {
@@ -499,7 +560,6 @@ private fun WeightSection(onAddWeight: () -> Unit) {
     Box(Modifier.height(16.dp))
 
     if (hasData) {
-        // Full-bleed swipeable chart — NOT inside a card.
         SwipeLineChart(entries = entries, goalKg = goal, period = period)
     } else {
         EmptyState("Запишите вес, чтобы увидеть динамику")
@@ -513,7 +573,6 @@ private fun WeightSection(onAddWeight: () -> Unit) {
     }
 
     Box(Modifier.height(16.dp))
-    // Recent weigh-ins.
     Column(
         Modifier
             .fillMaxWidth()
@@ -741,37 +800,55 @@ private fun SectionLabel(text: String) {
     )
 }
 
+/**
+ * Segmented period control (Неделя / Месяц / Год) with a single pill that
+ * slides smoothly between segments via [animateDpAsState] when the selection
+ * changes.
+ */
 @Composable
 private fun PeriodControl(period: Period, onSelect: (Period) -> Unit) {
-    Row(
+    val items = Period.entries
+    val selected = items.indexOf(period).coerceAtLeast(0)
+    Box(
         Modifier
             .fillMaxWidth()
             .screenHPad()
             .clip(RoundedCornerShape(14.dp))
             .background(Wellness.colors.track, RoundedCornerShape(14.dp))
             .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Period.entries.forEach { p ->
-            val active = p == period
-            NoFeedbackButton(onClick = { onSelect(p) }, modifier = Modifier.weight(1f)) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(
-                            if (active) Wellness.colors.container else Color.Transparent,
-                            RoundedCornerShape(10.dp),
-                        )
-                        .padding(vertical = 8.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        p.title,
-                        color = if (active) Wellness.colors.text else Wellness.colors.muted,
-                        style = Wellness.typography.bodyMedium,
-                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                    )
+        BoxWithConstraints(Modifier.fillMaxWidth().height(36.dp)) {
+            val n = items.size
+            val cell = maxWidth / n
+            val x by animateDpAsState(
+                targetValue = cell * selected,
+                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+                label = "periodPill",
+            )
+            Box(
+                Modifier
+                    .offset(x = x)
+                    .width(cell)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Wellness.colors.container, RoundedCornerShape(10.dp)),
+            )
+            Row(Modifier.fillMaxSize()) {
+                items.forEach { p ->
+                    val active = p == period
+                    NoFeedbackButton(
+                        onClick = { onSelect(p) },
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                p.title,
+                                color = if (active) Wellness.colors.text else Wellness.colors.muted,
+                                style = Wellness.typography.bodyMedium,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -802,35 +879,31 @@ private fun EmptyState(text: String) {
     }
 }
 
-@Composable
-private fun FormulaPlate() {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .screenHPad()
-            .clip(RoundedCornerShape(20.dp))
-            .background(Wellness.colors.container, RoundedCornerShape(20.dp))
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SolarIcon(name = "info-circle-bold-duotone", tint = Wellness.colors.accent, size = 20.dp)
-        Box(Modifier.width(10.dp))
-        Text(
-            "Как считается прогресс",
-            color = Wellness.colors.text,
-            style = Wellness.typography.titleSmall,
-            modifier = Modifier.weight(1f),
-        )
-        SolarIcon(name = "alt-arrow-right-outline", tint = Wellness.colors.muted, size = 18.dp)
-    }
-}
-
 // ── Charts ─────────────────────────────────────────────────────────────
 
 /**
- * Full-bleed weight line chart with a draggable scrubber. Touch anywhere and
- * drag: the nearest weigh-in highlights and a floating label shows its exact
- * value + date. No card background — it sits directly on the page.
+ * Build a smooth (rounded) path through [pts] using a cubic bezier per
+ * segment with horizontal control tangents. Gives the gentle S-curve look of
+ * iOS-style line charts instead of hard polyline corners.
+ */
+private fun smoothPath(pts: List<Offset>): Path {
+    val path = Path()
+    if (pts.isEmpty()) return path
+    path.moveTo(pts[0].x, pts[0].y)
+    for (i in 1 until pts.size) {
+        val p0 = pts[i - 1]
+        val p1 = pts[i]
+        val cx = (p0.x + p1.x) / 2f
+        path.cubicTo(cx, p0.y, cx, p1.y, p1.x, p1.y)
+    }
+    return path
+}
+
+/**
+ * Full-bleed weight line chart with a draggable scrubber. Smooth cubic line,
+ * vertical gradient fill, subtle baseline grid and a dashed goal line. Touch
+ * anywhere and drag: the nearest weigh-in highlights and a floating label
+ * shows its exact value + date. No card background — it sits on the page.
  */
 @Composable
 private fun SwipeLineChart(entries: List<WeightEntry>, goalKg: Float, period: Period) {
@@ -838,6 +911,7 @@ private fun SwipeLineChart(entries: List<WeightEntry>, goalKg: Float, period: Pe
     val color = Wellness.colors.accent
     val bg = Wellness.colors.bg
     val muted = Wellness.colors.muted
+    val grid = Wellness.colors.track
     val n = points.size
     val density = LocalDensity.current
 
@@ -868,7 +942,7 @@ private fun SwipeLineChart(entries: List<WeightEntry>, goalKg: Float, period: Pe
         Canvas(
             Modifier
                 .fillMaxWidth()
-                .height(160.dp)
+                .height(180.dp)
                 .onSizeChanged { canvasSize = it }
                 .pointerInput(entries, period) {
                     awaitEachGesture {
@@ -887,32 +961,53 @@ private fun SwipeLineChart(entries: List<WeightEntry>, goalKg: Float, period: Pe
         ) {
             val w = size.width
             val h = size.height
-            val vPad = 18.dp.toPx()
+            val vPad = 22.dp.toPx()
             fun yAt(v: Float): Float = vPad + (1f - (v - rawMin) / (rawMax - rawMin)) * (h - vPad * 2)
 
-            // Goal line
+            // Subtle horizontal grid lines (top, middle, bottom of plot area).
+            val plotTop = vPad
+            val plotBottom = h - vPad
+            listOf(0f, 0.5f, 1f).forEach { f ->
+                val gy = plotTop + (plotBottom - plotTop) * f
+                drawLine(
+                    color = grid.copy(alpha = 0.6f),
+                    start = Offset(hPadPx, gy),
+                    end = Offset(w - hPadPx, gy),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            }
+
+            // Dashed goal line.
             val goalY = yAt(goalKg)
             drawLine(
-                color = muted.copy(alpha = 0.35f),
+                color = muted.copy(alpha = 0.45f),
                 start = Offset(hPadPx, goalY),
                 end = Offset(w - hPadPx, goalY),
-                strokeWidth = 1.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 6.dp.toPx()), 0f),
+                strokeWidth = 1.5.dp.toPx(),
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(7.dp.toPx(), 7.dp.toPx()), 0f),
             )
 
             if (n > 1) {
-                val path = Path()
-                points.forEachIndexed { i, v ->
-                    if (i == 0) path.moveTo(xAt(i, w), yAt(v)) else path.lineTo(xAt(i, w), yAt(v))
-                }
+                val pts = points.mapIndexed { i, v -> Offset(xAt(i, w), yAt(v)) }
+                val line = smoothPath(pts)
+                // Gradient area under the curve.
                 val area = Path().apply {
-                    addPath(path)
-                    lineTo(xAt(n - 1, w), h)
-                    lineTo(xAt(0, w), h)
+                    addPath(line)
+                    lineTo(pts.last().x, h)
+                    lineTo(pts.first().x, h)
                     close()
                 }
-                drawPath(area, color = color.copy(alpha = 0.12f))
-                drawPath(path, color = color, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+                drawPath(
+                    area,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(color.copy(alpha = 0.30f), color.copy(alpha = 0.02f)),
+                        startY = plotTop,
+                        endY = h,
+                    ),
+                )
+                // Soft underlay stroke + crisp line on top.
+                drawPath(line, color = color.copy(alpha = 0.18f), style = Stroke(width = 7.dp.toPx(), cap = StrokeCap.Round))
+                drawPath(line, color = color, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
             }
 
             val act = active
@@ -920,16 +1015,20 @@ private fun SwipeLineChart(entries: List<WeightEntry>, goalKg: Float, period: Pe
                 val ax = xAt(act, w)
                 drawLine(
                     color = color.copy(alpha = 0.4f),
-                    start = Offset(ax, vPad),
-                    end = Offset(ax, h - vPad),
+                    start = Offset(ax, plotTop),
+                    end = Offset(ax, plotBottom),
                     strokeWidth = 1.dp.toPx(),
                 )
             }
 
             points.forEachIndexed { i, v ->
-                val r = if (active == i) 6.dp.toPx() else 3.5.dp.toPx()
+                val on = active == i
+                val r = if (on) 6.dp.toPx() else 3.5.dp.toPx()
+                if (on) {
+                    drawCircle(color = color.copy(alpha = 0.18f), radius = 12.dp.toPx(), center = Offset(xAt(i, w), yAt(v)))
+                }
                 drawCircle(color = color, radius = r, center = Offset(xAt(i, w), yAt(v)))
-                drawCircle(color = bg, radius = 2.dp.toPx(), center = Offset(xAt(i, w), yAt(v)))
+                drawCircle(color = bg, radius = if (on) 2.5.dp.toPx() else 2.dp.toPx(), center = Offset(xAt(i, w), yAt(v)))
             }
         }
 
