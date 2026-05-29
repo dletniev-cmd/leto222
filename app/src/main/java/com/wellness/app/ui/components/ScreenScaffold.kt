@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,14 +16,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -46,16 +42,8 @@ fun ScreenScaffold(
     pinnedHeader: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    val density = LocalDensity.current
-    // Measured height of the pinned header, so the scrolling content can
-    // reserve exactly that much room at the top: at rest the first item
-    // sits right below the title (nothing clipped), and on scroll the
-    // content slides UP and passes *under* the (transparent, no-plate)
-    // header which stays nailed in place.
-    var headerHeight by remember { mutableStateOf(0.dp) }
-
     CompositionLocalProvider(LocalScreenHPad provides horizontalPadding) {
-        Box(Modifier.fillMaxSize()) {
+        if (pinnedHeader == null) {
             // ElasticOverscroll replaces the system stretch with a damped
             // iOS-style translation: scrolls slide a touch further past the
             // edge and ping back — nothing gets visually deformed.
@@ -67,27 +55,58 @@ fun ScreenScaffold(
                         .windowInsetsPadding(WindowInsets.statusBars)
                         .padding(top = topPadding, bottom = 160.dp)
                 ) {
-                    if (pinnedHeader != null) {
-                        Spacer(Modifier.height(headerHeight))
-                    }
                     content()
                 }
             }
-            // Pinned header: same top inset + padding as the scrolling
-            // column so it lines up pixel-for-pixel with where the header
-            // used to live, but it never scrolls. No background — the
-            // content is fully visible scrolling beneath it.
-            if (pinnedHeader != null) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .windowInsetsPadding(WindowInsets.statusBars)
-                        .padding(top = topPadding)
-                        .onSizeChanged {
-                            headerHeight = with(density) { it.height.toDp() }
+        } else {
+            // Pinned (sticky, transparent, no-plate) header. We measure the
+            // header and lay out the scrolling body in the SAME pass via
+            // SubcomposeLayout, so the body's top spacer is correct on the
+            // very first frame. (The old approach measured the header into a
+            // state and read it back a frame later — every fresh mount, e.g.
+            // this screen re-appearing as the underlay when a sheet/overlay
+            // opens, briefly rendered with a 0-height spacer and then jumped
+            // down by the header height. That one-frame jump was the
+            // "дёргается" jitter. Measuring synchronously removes it.)
+            // Top inset that BOTH the header and the body share, so the
+            // header lines up pixel-for-pixel with where the first item
+            // would otherwise sit. Read here (composable scope) — it can't
+            // be read inside the SubcomposeLayout measure lambda.
+            val topInset =
+                WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + topPadding
+
+            SubcomposeLayout(Modifier.fillMaxSize()) { constraints ->
+                val looseW = constraints.copy(minHeight = 0, maxHeight = Int.MAX_VALUE)
+
+                // 1) Measure the pinned header first.
+                val headerPlaceables = subcompose("pinnedHeader") {
+                    Box(Modifier.fillMaxWidth()) { pinnedHeader() }
+                }.map { it.measure(looseW) }
+                val headerPx = headerPlaceables.maxOfOrNull { it.height } ?: 0
+                val headerDp = headerPx.toDp()
+
+                // 2) Measure the scrolling body, reserving exactly
+                //    topInset + headerHeight at the top so the first item
+                //    rests right below the title and content scrolls UNDER it.
+                val bodyPlaceables = subcompose("body") {
+                    ElasticOverscroll(modifier = Modifier.fillMaxSize()) {
+                        Column(
+                            Modifier
+                                .fillMaxSize()
+                                .verticalScroll(scrollState)
+                                .padding(bottom = 160.dp)
+                        ) {
+                            Spacer(Modifier.height(topInset + headerDp))
+                            content()
                         }
-                ) {
-                    pinnedHeader()
+                    }
+                }.map { it.measure(constraints) }
+
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    bodyPlaceables.forEach { it.place(0, 0) }
+                    // Header sits on top, pinned at the shared top inset.
+                    val headerY = topInset.roundToPx()
+                    headerPlaceables.forEach { it.place(0, headerY) }
                 }
             }
         }
