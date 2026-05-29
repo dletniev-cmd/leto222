@@ -26,8 +26,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.hazeChild
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -89,7 +91,12 @@ private val NavEasing = CubicBezierEasing(0.32f, 0.72f, 0.0f, 1.0f)
 private const val NavMoveMs = 320
 
 @Composable
-fun Navbar(current: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier) {
+fun Navbar(
+    current: Tab,
+    onSelect: (Tab) -> Unit,
+    modifier: Modifier = Modifier,
+    hazeState: HazeState? = null,
+) {
     val state = LocalAppState.current
     val tabs = state.navbarOrder
     val idx = tabs.indexOf(current).coerceAtLeast(0)
@@ -118,12 +125,21 @@ fun Navbar(current: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier)
     // 0 → 0.5 → 1 maps to scaleX 1.0 → 1.12 → 1.0 (parabola peaked at .5)
     val pillScaleX = 1f + 0.12f * (1f - kotlin.math.abs(2f * squash.value - 1f))
 
+    // Same hue as r32 (dark = container, light = white), alpha lowered
+    // so the frosted-glass blur underneath can read through. No theme
+    // colour change, no shadow — per user spec.
     val bg = if (Wellness.colors.isDark) {
-        // Reference dark bg: 0xF21C1C1E — container at ~0.95 alpha.
-        Wellness.colors.container.copy(alpha = 0.95f)
+        Wellness.colors.container.copy(alpha = 0.62f)
     } else {
-        Color.White.copy(alpha = 0.95f)
+        Color.White.copy(alpha = 0.62f)
     }
+    // Light, smooth blur: 16 dp RenderEffect, no noise, static tint —
+    // no animated parameter on the blur itself so nothing can "jitter".
+    val hazeStyle = HazeStyle(
+        tint = bg,
+        blurRadius = 16.dp,
+        noiseFactor = 0f,
+    )
 
     Box(
         modifier
@@ -131,18 +147,22 @@ fun Navbar(current: Tab, onSelect: (Tab) -> Unit, modifier: Modifier = Modifier)
             // shell leaves between the island and the bottom of the
             // device. Keeps the nav floating, not glued to the edge.
             .padding(bottom = 20.dp)
-            // Single combined shadow standing in for the reference's
-            // two-layer drop shadow (it overlays a wide soft blur with
-            // a tight contact shadow). 16 dp elevation reads close
-            // enough on both themes without going theatrical.
-            .shadow(
-                elevation = 16.dp,
-                shape = RoundedCornerShape(NavCornerRadius),
-                ambientColor = Color.Black,
-                spotColor = Color.Black,
-            )
             .clip(RoundedCornerShape(NavCornerRadius))
-            .background(bg, RoundedCornerShape(NavCornerRadius))
+            // Real frosted-glass blur when a haze source is wired
+            // (Android 12+ uses RenderEffect, GPU-continuous, no
+            // per-frame snapshotting → smooth). Without haze, fall
+            // through to a plain translucent tint — same hue, no crash.
+            .let { base ->
+                if (hazeState != null) {
+                    base.hazeChild(
+                        state = hazeState,
+                        shape = RoundedCornerShape(NavCornerRadius),
+                        style = hazeStyle,
+                    )
+                } else {
+                    base.background(bg, RoundedCornerShape(NavCornerRadius))
+                }
+            }
             .padding(horizontal = NavPadH, vertical = NavPadV)
     ) {
         Box(
