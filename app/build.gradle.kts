@@ -11,8 +11,8 @@ android {
         applicationId = "com.wellness.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 48
-        versionName = "r48"
+        versionCode = 49
+        versionName = "r49"
         vectorDrawables { useSupportLibrary = true }
     }
 

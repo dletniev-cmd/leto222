@@ -143,6 +143,11 @@ fun WellnessApp() {
     // slot to the underlay slot) no longer creates a fresh scroll state that
     // snaps the page back to the top.
     val progressScroll = rememberScrollState()
+    // Hoisted for the same reason: which tab (Общий/Вес/Сон/Шаги) is open on
+    // the Progress-Goals screen must survive the screen moving between the top
+    // and underlay slots (e.g. opening the sleep adder), otherwise it would
+    // reset to "Общий" every time.
+    val progressSection = remember { androidx.compose.runtime.mutableStateOf("overview") }
     val parallax = rememberParallaxProgress()
     // Sink for nested overlays. When the stack is >= 2 levels deep the
     // active top RoundedSlideOverlay must NOT drive the host parallax,
@@ -281,6 +286,7 @@ fun WellnessApp() {
                         animatedBack = {},
                         onPushLogs = {},
                         progressScrollState = progressScroll,
+                        progressSectionState = progressSection,
                     )
                 }
             }
@@ -312,6 +318,7 @@ fun WellnessApp() {
                             onPushWeight = { push(AddOverlay.Weight) },
                             onPushSleep = { push(AddOverlay.Sleep) },
                             progressScrollState = progressScroll,
+                            progressSectionState = progressSection,
                         )
                     }
                 }
@@ -339,6 +346,7 @@ private fun OverlayContent(
     onPushWeight: () -> Unit = {},
     onPushSleep: () -> Unit = {},
     progressScrollState: ScrollState? = null,
+    progressSectionState: androidx.compose.runtime.MutableState<String>? = null,
 ) {
     when (current) {
         AddOverlay.Habit -> AddHabitScreen(onBack = animatedBack)
@@ -359,6 +367,7 @@ private fun OverlayContent(
             onAddWeight = onPushWeight,
             onAddSleep = onPushSleep,
             scrollState = progressScrollState,
+            sectionState = progressSectionState,
         )
     }
 }
