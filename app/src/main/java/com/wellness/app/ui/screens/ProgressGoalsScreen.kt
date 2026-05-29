@@ -202,8 +202,12 @@ fun ProgressGoalsScreen(
         Column(Modifier.fillMaxWidth().padding(top = topInset)) {
             SettingsHeader(title = "Прогресс целей", onBack = onBack)
             TabChips(
-                pageFraction = pager.currentPage + pager.currentPageOffsetFraction,
-                selectedPage = pager.currentPage,
+                // Deferred reads: the pill position is read in the DRAW phase
+                // (graphicsLayer), and the active index in TabChips' own
+                // composition — so swiping never recomposes this whole screen
+                // (which would re-run calculateGoalProgress + every chart per frame).
+                pageFraction = { pager.currentPage + pager.currentPageOffsetFraction },
+                selectedPage = { pager.currentPage },
                 overscrollX = { elastic.horizontalOverscroll.floatValue },
                 onSelect = goToPage,
             )
@@ -222,8 +226,8 @@ fun ProgressGoalsScreen(
  */
 @Composable
 private fun TabChips(
-    pageFraction: Float,
-    selectedPage: Int,
+    pageFraction: () -> Float,
+    selectedPage: () -> Int,
     overscrollX: () -> Float,
     onSelect: (Int) -> Unit,
 ) {
@@ -237,21 +241,26 @@ private fun TabChips(
             val n = TABS.size
             val cell = maxWidth / n
             val inset = 4.dp
-            val frac = pageFraction.coerceIn(0f, (n - 1).toFloat())
 
-            // Sliding accent pill behind the active cell.
+            // Sliding accent pill behind the active cell. Position is read in
+            // the DRAW phase (graphicsLayer) from the pageFraction lambda, so
+            // the pill follows the swipe smoothly with NO recomposition.
             Box(
                 Modifier
-                    .offset(x = cell * frac + inset)
                     .width(cell - inset * 2)
                     .fillMaxHeight()
+                    .graphicsLayer {
+                        val frac = pageFraction().coerceIn(0f, (n - 1).toFloat())
+                        translationX = cell.toPx() * frac + inset.toPx()
+                    }
                     .clip(RoundedCornerShape(999.dp))
                     .background(Wellness.colors.accent, RoundedCornerShape(999.dp)),
             )
 
+            val selected = selectedPage()
             Row(Modifier.fillMaxSize()) {
                 TABS.forEachIndexed { i, tab ->
-                    val active = i == selectedPage
+                    val active = i == selected
                     val fg = if (active) Color.White else Wellness.colors.muted
                     NoFeedbackButton(
                         onClick = { onSelect(i) },
