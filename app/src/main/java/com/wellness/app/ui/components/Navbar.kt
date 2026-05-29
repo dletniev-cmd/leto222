@@ -42,19 +42,14 @@ import com.wellness.app.ui.state.LocalAppState
 import com.wellness.app.ui.state.Tab
 import com.wellness.app.ui.theme.Wellness
 import com.wellness.app.ui.theme.WellnessColors
-import dev.chrisbanes.haze.HazeDefaults
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import dev.chrisbanes.haze.hazeChild
 
 /**
  * One icon per tab — the SAME asset is used in both active and inactive
  * state; only the tint changes (with a soft cross-fade).
  *
  * For the Profile tab we don't render a glyph at all: the slot shows a
- * 28 dp circular avatar (Telegram photo when bound, otherwise a gradient
- * disc with the first letter of the user's name as fallback) — same
- * pattern as the reference island-nav.
+ * 26 dp circular avatar (Telegram photo when bound, otherwise a gradient
+ * disc with the first letter of the user's name as fallback).
  */
 fun tabIcon(tab: Tab): String = when (tab) {
     Tab.Home -> "home-2-bold-duotone"
@@ -74,13 +69,11 @@ fun tabTitle(tab: Tab): String = when (tab) {
 }
 
 // === Geometry ===
-// Adapted from the reference island-nav (52×44, padding 10/8). The
-// reference targets a 3-button bar; our 5-button layout overflowed the
-// screen visually, so the dimensions are pulled in slightly so the
-// pills sit closer together without losing finger-target size: button
-// 48×40 (still ≥44 dp tappable thanks to the row's 8 dp vertical
-// chrome on top + bottom), padding 8/6, container radius 26, pill
-// radius 18. Same motion physics as before — only sizes shrank.
+// Adapted from the reference island-nav (52×44, padding 10/8). Pulled
+// in for the 5-button row so the pills sit closer together: button
+// 48×40, padding 8/6, container radius 26, pill radius 18. Bottom
+// safe-area gap 14 dp (down from 20 dp) — bar sits a touch closer
+// to the gesture edge.
 private val ButtonWidth = 48.dp
 private val ButtonHeight = 40.dp
 private val NavGap = 4.dp
@@ -99,25 +92,21 @@ fun Navbar(
     current: Tab,
     onSelect: (Tab) -> Unit,
     modifier: Modifier = Modifier,
-    hazeState: HazeState? = null,
 ) {
     val state = LocalAppState.current
     val tabs = state.navbarOrder
     val idx = tabs.indexOf(current).coerceAtLeast(0)
 
-    // Pill X — animates with the same tween + curve as the reference.
-    // Spring is intentionally NOT used here: the user said the springy
-    // motion "moves horribly"; the reference glides linearly with a
-    // soft ease-out and no overshoot.
+    // Pill X — tween + soft ease-out, no overshoot, no bounce.
     val indicatorOffset by animateDpAsState(
         targetValue = (ButtonWidth + NavGap) * idx,
         animationSpec = tween(durationMillis = NavMoveMs, easing = NavEasing),
         label = "indicator",
     )
 
-    // Pill squash on tab change: parabolic scaleX 1.0 → 1.12 → 1.0 over
-    // 320 ms. Reset to 0 on every change so a fast double-tap still
-    // produces a fresh squash.
+    // Pill squash on tab change: parabolic scaleX 1.0 → 1.12 → 1.0
+    // over 320 ms. Reset to 0 on every change so a fast double-tap
+    // still produces a fresh squash.
     val squash = remember { Animatable(0f) }
     LaunchedEffect(idx) {
         squash.snapTo(0f)
@@ -130,59 +119,27 @@ fun Navbar(
     val pillScaleX = 1f + 0.12f * (1f - kotlin.math.abs(2f * squash.value - 1f))
 
     val isDark = Wellness.colors.isDark
-    // Tint sitting on top of the blurred snapshot. We want the bar to
-    // read as glass — semi-transparent, takes its mood from whatever is
-    // behind it — but still legible. Alpha ~.55 dark / ~.7 light is the
-    // sweet spot (any lower and the icons stop reading on a bright
-    // screen-behind, any higher and the blur stops being visible).
-    val tint = if (isDark) Color(0xFF1C1C1E).copy(alpha = 0.55f)
-               else Color.White.copy(alpha = 0.70f)
-    val hazeStyle = HazeStyle(
-        tint = tint,
-        blurRadius = 24.dp,
-        noiseFactor = HazeDefaults.noiseFactor,
-    )
-    // Fallback when haze isn't wired (e.g. previews) — keep the bar
-    // legible but obviously not blurred. 95% alpha matches the
-    // pre-blur version of the navbar so screenshots still look right.
-    val solidBg = if (isDark) Wellness.colors.container.copy(alpha = 0.95f)
-                  else Color.White.copy(alpha = 0.95f)
+    // User asked for a *transparent* navbar — the previous attempt at
+    // a heavy frosted-glass tint (alpha .55) drowned the icons. This
+    // is the right balance: low-alpha tinted layer over the home BG,
+    // so the icons stay perfectly legible while the bar still reads
+    // as a distinct floating surface.
+    //   dark theme  → black @ 0.32   (slightly darker than the home BG)
+    //   light theme → white @ 0.55  (slightly lighter than home BG)
+    val bgColor = if (isDark) Color.Black.copy(alpha = 0.32f)
+                  else Color.White.copy(alpha = 0.55f)
 
     Box(
         modifier
-            // Bottom safe-area gap — pulled in from the reference's
-            // 20 dp to 14 dp so the bar sits a touch closer to the
-            // edge of the screen (user feedback: it felt floating
-            // too high above the gesture bar).
             .padding(bottom = 14.dp)
-            // Drop shadow that survives the glass effect. Modifier
-            // order matters here — shadow has to be applied BEFORE
-            // the haze child so it draws under the blurred area.
             .shadow(
-                elevation = 16.dp,
+                elevation = 12.dp,
                 shape = RoundedCornerShape(NavCornerRadius),
                 ambientColor = Color.Black,
                 spotColor = Color.Black,
             )
+            .background(bgColor, RoundedCornerShape(NavCornerRadius))
             .clip(RoundedCornerShape(NavCornerRadius))
-            .let { base ->
-                if (hazeState != null) {
-                    // Real frosted-glass blur: haze captures the
-                    // content drawn into `hazeState.haze(...)` (the
-                    // tab area sitting under the navbar) and renders
-                    // it through a RenderEffect blur, clipped to the
-                    // navbar's rounded-rect shape. On API < 31 the
-                    // library falls back to a flat translucent tint
-                    // automatically — no crashes, no missing visuals.
-                    base.hazeChild(
-                        state = hazeState,
-                        shape = RoundedCornerShape(NavCornerRadius),
-                        style = hazeStyle,
-                    )
-                } else {
-                    base.background(solidBg, RoundedCornerShape(NavCornerRadius))
-                }
-            }
             .padding(horizontal = NavPadH, vertical = NavPadV)
     ) {
         Box(
@@ -198,8 +155,6 @@ fun Navbar(
                     .size(width = ButtonWidth, height = ButtonHeight)
                     .graphicsLayer {
                         scaleX = pillScaleX
-                        // Reference squashes ONLY scaleX. The icons
-                        // sitting on top don't move at all.
                         scaleY = 1f
                     }
                     .background(
@@ -224,9 +179,7 @@ fun Navbar(
 
 @Composable
 private fun NavItem(tab: Tab, active: Boolean, onClick: () -> Unit) {
-    // Icon tint cross-fades between accent and muted over 200 ms —
-    // same as the reference's AnimatedSwitcher between two const
-    // colored icons, but cheaper: a single tint animation, no swap.
+    // Icon tint cross-fades between accent and muted over 200 ms.
     val tint by animateColorAsState(
         targetValue = if (active) Wellness.colors.accent else Wellness.colors.muted,
         animationSpec = tween(durationMillis = 200, easing = LinearEasing),
@@ -241,8 +194,6 @@ private fun NavItem(tab: Tab, active: Boolean, onClick: () -> Unit) {
             if (tab == Tab.Profile) {
                 ProfileNavSlot()
             } else {
-                // No scale, no lift — icons stay perfectly still
-                // (only the pill underneath moves and squashes).
                 SolarIcon(name = tabIcon(tab), tint = tint, size = 22.dp)
             }
         }
@@ -255,9 +206,6 @@ private fun NavItem(tab: Tab, active: Boolean, onClick: () -> Unit) {
  *    is painted first so the slot never flashes empty.
  *  - When a Telegram photo is bound, an `AsyncImage` crossfades on
  *    top of the backdrop.
- *
- * No active-state scale — matches the reference, where the avatar
- * stays the same size whether selected or not.
  */
 @Composable
 private fun ProfileNavSlot() {

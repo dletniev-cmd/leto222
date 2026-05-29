@@ -11,8 +11,8 @@ android {
         applicationId = "com.wellness.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 33
-        versionName = "r33"
+        versionCode = 34
+        versionName = "r34"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -99,11 +99,6 @@ dependencies {
     // Coil + SVG decoder (Coil 2.x — matches imports in SolarIcon.kt)
     implementation("io.coil-kt:coil:2.6.0")
     implementation("io.coil-kt:coil-compose:2.6.0")
-    // Frosted-glass background blur behind the navbar (and any other
-    // place we want iOS-style glass). On API 31+ haze uses the real
-    // RenderEffect blur; on older devices it gracefully degrades to
-    // a translucent tint.
-    implementation("dev.chrisbanes.haze:haze:0.7.3")
     implementation("io.coil-kt:coil-svg:2.6.0")
 
     // Coroutines
