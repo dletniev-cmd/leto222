@@ -88,6 +88,11 @@ fun HomeScreen(@Suppress("UNUSED_PARAMETER") onAddWeight: () -> Unit = {}) {
 @Composable
 private fun HeroCard() {
     val state = LocalAppState.current
+    // Hoisted once per recomposition — overallProgress() iterates the
+    // habits list, so calling it twice (ring fill + percent label) made
+    // the hero block do double work on every recomposition (which
+    // happens on the 30 s nowMin tick / any habit toggle).
+    val overall = state.overallProgress()
     Row(
         Modifier
             .fillMaxWidth()
@@ -97,14 +102,14 @@ private fun HeroCard() {
     ) {
         Box(Modifier.size(140.dp), contentAlignment = Alignment.Center) {
             ProgressRing(
-                progress = state.overallProgress(),
+                progress = overall,
                 color = Wellness.colors.accent,
                 size = 140.dp,
                 strokeWidth = 12.dp,
             )
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "${(state.overallProgress() * 100).toInt()}%",
+                    text = "${(overall * 100).toInt()}%",
                     color = Wellness.colors.text,
                     style = Wellness.typography.displayLarge,
                 )
