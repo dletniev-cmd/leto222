@@ -243,11 +243,26 @@ fun WellnessApp() {
           // like the old versions. Keeping the navbar OUT of the haze
           // source is also what stops the blur snapshot eating its icons.
 
-        // Navbar — always mounted on the root tabs, fixed in place. It is
-        // a sibling of (not inside) the haze source, and is drawn BEFORE
-        // the overlays so any open screen / sheet sits ON TOP of it
-        // rather than the bar floating over the screen or sliding away.
-        Box(modifier = Modifier.fillMaxSize()) {
+        // Navbar — mounted on the root tabs, a sibling of (not inside)
+        // the haze source, drawn BEFORE the overlays so any open screen /
+        // sheet sits ON TOP of it as it slides in.
+        //
+        // It now slides LEFT in lock-step with the root tab content as a
+        // new overlay slides in from the right — driven by the SAME host
+        // `parallax` and the SAME 0.28 fraction OverlayHost uses for its
+        // own content (HostParallaxFraction). Result: the bar travels
+        // together with the home screen it belongs to, instead of staying
+        // pinned while everything else moves. When the overlay fully
+        // covers the screen (parallax → 0) the bar is shifted off behind
+        // it; popping back slides it home again.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val p = parallax.floatValue
+                    translationX = -(1f - p) * size.width * 0.28f
+                }
+        ) {
             Navbar(
                 current = state.currentTab,
                 onSelect = { state.currentTab = it },
