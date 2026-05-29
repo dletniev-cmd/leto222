@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -88,8 +89,10 @@ private val PillCornerRadius = 18.dp
 
 // Same easing curve as the reference island-nav for the pill motion
 // and squash recovery — gentle ease-out, no overshoot, no bounce.
+// r36: bumped 320 → 420 ms — pill glides a touch slower so the warm
+// glow has time to register; still feels snappy on tap.
 private val NavEasing = CubicBezierEasing(0.32f, 0.72f, 0.0f, 1.0f)
-private const val NavMoveMs = 320
+private const val NavMoveMs = 420
 
 @Composable
 fun Navbar(
@@ -173,8 +176,26 @@ fun Navbar(
                 .width(ButtonWidth * tabs.size + NavGap * (tabs.size - 1))
                 .height(ButtonHeight)
         ) {
-            // The indicator pill — squashes on tap, then settles to a
-            // calm rounded rect under the active slot.
+            // The indicator pill (r36: Island Pill v2).
+            //  - Fill is a 160°-ish linear gradient accent → pink so the
+            //    active slot reads warm and slightly two-tone, not flat.
+            //  - A warm outer glow (shadow w/ accent spotColor) gives the
+            //    pill a soft halo on dark theme — matches the prototype's
+            //    `box-shadow: 0 0 24px rgba(255,140,90,.35)`.
+            //  - A 1 dp white-alpha top sheen sells the "glass" highlight
+            //    (inset 0 1px 0 rgba(255,255,255,.10)).
+            //  - Squash-on-tap stays scaleX-only (parabola), so icons
+            //    never get squished.
+            val pillShape = RoundedCornerShape(PillCornerRadius)
+            val accent = Wellness.colors.accent
+            val pillBrush = Brush.linearGradient(
+                colors = listOf(
+                    accent.copy(alpha = 0.30f),
+                    WellnessColors.TilePink.copy(alpha = 0.22f),
+                ),
+                start = Offset(0f, 0f),
+                end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
+            )
             Box(
                 Modifier
                     .offset(x = indicatorOffset, y = 0.dp)
@@ -183,11 +204,32 @@ fun Navbar(
                         scaleX = pillScaleX
                         scaleY = 1f
                     }
-                    .background(
-                        Wellness.colors.accent.copy(alpha = 0.22f),
-                        RoundedCornerShape(PillCornerRadius),
+                    // Warm halo. spotColor + ambientColor are accent-tinted,
+                    // so on dark theme this paints a soft orange cast around
+                    // the pill (API 28+). Elevation kept low so it doesn't
+                    // bleed onto neighbouring tabs.
+                    .shadow(
+                        elevation = 8.dp,
+                        shape = pillShape,
+                        ambientColor = accent,
+                        spotColor = accent,
                     )
-            )
+                    .background(pillBrush, pillShape)
+                    .clip(pillShape)
+            ) {
+                // Top sheen — 1 dp tall, fades from white-alpha to transparent.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.White.copy(alpha = 0.10f),
+                                0.08f to Color.Transparent,
+                            ),
+                            pillShape,
+                        )
+                )
+            }
 
             Row(Modifier.fillMaxSize()) {
                 tabs.forEachIndexed { i, tab ->
