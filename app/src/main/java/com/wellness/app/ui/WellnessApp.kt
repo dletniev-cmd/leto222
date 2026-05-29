@@ -8,7 +8,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -135,6 +137,12 @@ fun WellnessApp() {
     val underlay: AddOverlay? = if (overlayStack.size >= 2) overlayStack[overlayStack.size - 2] else null
     val push: (AddOverlay) -> Unit = { o -> overlayStack = overlayStack + o; lastAction = "push" }
     val pop: () -> Unit = { overlayStack = overlayStack.dropLast(1); lastAction = "pop" }
+    // Hoisted scroll position for the Progress-Goals screen. The SAME
+    // instance is fed to both its "top overlay" and "underlay" rendering, so
+    // opening the weight/sleep adder (which moves this screen from the top
+    // slot to the underlay slot) no longer creates a fresh scroll state that
+    // snaps the page back to the top.
+    val progressScroll = rememberScrollState()
     val parallax = rememberParallaxProgress()
     // Sink for nested overlays. When the stack is >= 2 levels deep the
     // active top RoundedSlideOverlay must NOT drive the host parallax,
@@ -272,6 +280,7 @@ fun WellnessApp() {
                         current = u,
                         animatedBack = {},
                         onPushLogs = {},
+                        progressScrollState = progressScroll,
                     )
                 }
             }
@@ -302,6 +311,7 @@ fun WellnessApp() {
                             onPushLogs = { push(AddOverlay.Logs) },
                             onPushWeight = { push(AddOverlay.Weight) },
                             onPushSleep = { push(AddOverlay.Sleep) },
+                            progressScrollState = progressScroll,
                         )
                     }
                 }
@@ -328,6 +338,7 @@ private fun OverlayContent(
     onPushLogs: () -> Unit,
     onPushWeight: () -> Unit = {},
     onPushSleep: () -> Unit = {},
+    progressScrollState: ScrollState? = null,
 ) {
     when (current) {
         AddOverlay.Habit -> AddHabitScreen(onBack = animatedBack)
@@ -347,6 +358,7 @@ private fun OverlayContent(
             onBack = animatedBack,
             onAddWeight = onPushWeight,
             onAddSleep = onPushSleep,
+            scrollState = progressScrollState,
         )
     }
 }

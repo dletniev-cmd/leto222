@@ -1,7 +1,9 @@
 package com.wellness.app.ui.screens
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,12 +60,21 @@ fun ProgressGoalsScreen(
     onBack: () -> Unit,
     onAddWeight: () -> Unit = {},
     onAddSleep: () -> Unit = {},
+    scrollState: ScrollState? = null,
 ) {
     val state = LocalAppState.current
     val b = calculateGoalProgress(state)
 
+    // The scroll position is HOISTED by the caller (WellnessApp) and the
+    // SAME ScrollState instance is handed to both the "top overlay" and the
+    // "underlay" rendering of this screen. Without that, opening the weight /
+    // sleep adder moved this screen from the top slot to the underlay slot,
+    // which created a fresh scroll state and snapped the page back to the top.
+    val scroll = scrollState ?: rememberScrollState()
+
     Box(Modifier.fillMaxSize().background(Wellness.colors.bg)) {
         ScreenScaffold(
+            scrollState = scroll,
             topPadding = 0.dp,
             pinnedHeader = {
                 SettingsHeader(title = "Прогресс целей", onBack = onBack)
