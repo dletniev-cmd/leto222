@@ -137,15 +137,16 @@ fun Navbar(
     } else {
         Color.White.copy(alpha = 0.62f)
     }
-    // Frosted-glass blur. Radius 22 dp — small enough to read as
-    // "light" but big enough that scrolling text underneath doesn't
-    // produce visible sub-pixel jitter (at 16 dp the blur was sharp
-    // enough that per-frame source updates showed up as shimmer).
-    // noiseFactor = 0 → no grain on top of the tint.
+    // Frosted-glass blur. Radius 24 dp + a touch of noise (0.18) —
+    // the noise grain masks haze 0.7.3's per-frame sub-pixel sampling
+    // jitter that shows up as shimmer under scrolling antialiased text.
+    // Without noise the blur reads cleaner standing still but visibly
+    // dances when the source moves; with this much grain it stays
+    // calm and still looks like a real frosted-glass surface.
     val hazeStyle = HazeStyle(
         tint = bg,
-        blurRadius = 22.dp,
-        noiseFactor = 0f,
+        blurRadius = 24.dp,
+        noiseFactor = 0.18f,
     )
 
     Box(

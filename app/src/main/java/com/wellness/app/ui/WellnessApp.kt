@@ -233,29 +233,6 @@ fun WellnessApp() {
                 }
             }
         }
-        } // end haze source wrapper
-
-        // Navbar lives OUTSIDE the parallax host so it doesn't slide off to
-        // the left along with the tab content when an overlay opens. Instead
-        // it fades on the same progress value — at parallax = 1 (no overlay)
-        // it's fully visible; at parallax = 0 (overlay fully covering the
-        // screen) it's invisible. The fade is driven inside a graphicsLayer
-        // block so reading the float doesn't trigger recomposition of the
-        // navbar tree.
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Parallax-driven fade is now applied INSIDE Navbar so it
-            // covers both the icons/pill AND the hazeChild backdrop
-            // (otherwise the blur stayed at full alpha while icons
-            // faded — read as "icons disappear" during overlay open).
-            Navbar(
-                current = state.currentTab,
-                onSelect = { state.currentTab = it },
-                modifier = Modifier.align(Alignment.BottomCenter),
-                hazeState = hazeState,
-                alpha = { parallax.floatValue },
-            )
-        }
-
         // Underlay — only the second-from-top overlay, rendered
         // statically full-screen behind the active one (no slide, no
         // swipe-back, no-op onBack). Keeps the parent visible during
@@ -312,6 +289,24 @@ fun WellnessApp() {
                     }
                 }
             }
+        }
+        } // end haze source wrapper — overlays included so the navbar's
+          // backdrop blur captures whatever's currently on screen
+          // (tab content OR open overlay) rather than always the
+          // last-active tab.
+
+        // Navbar sits ON TOP of overlays in z-order so it stays visible
+        // when a screen is open. No parallax fade — it never disappears
+        // mid-transition; only the tab content / overlay underneath it
+        // slides. The bar's hazeChild reads the live source under it
+        // (now including the overlay).
+        Box(modifier = Modifier.fillMaxSize()) {
+            Navbar(
+                current = state.currentTab,
+                onSelect = { state.currentTab = it },
+                modifier = Modifier.align(Alignment.BottomCenter),
+                hazeState = hazeState,
+            )
         }
 
         // Crash reports are written to disk by CrashReporter on uncaught
