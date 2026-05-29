@@ -68,10 +68,12 @@ fun ProfileScreen(
 
     ScreenScaffold(topPadding = 0.dp) {
         // Pencil edit button anchored top-right with no surrounding plate.
+        // Sits flush with the status bar — matches Telegram's profile
+        // header where the chrome row hugs the top edge.
         Box(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 14.dp, end = 14.dp, top = 6.dp),
+                .padding(start = 14.dp, end = 14.dp, top = 0.dp),
             contentAlignment = Alignment.CenterEnd,
         ) {
             NoFeedbackButton(onClick = onEditProfile, modifier = Modifier.size(44.dp)) {
@@ -86,7 +88,7 @@ fun ProfileScreen(
         // empty slot never shows through.
         val photoUrl = state.telegramUser?.photoUrl
         val context = LocalContext.current
-        Box(Modifier.fillMaxWidth().padding(top = 6.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().padding(top = 0.dp), contentAlignment = Alignment.Center) {
             Box(
                 Modifier
                     .size(108.dp)
@@ -111,14 +113,14 @@ fun ProfileScreen(
 
         // Name + subtitle. `userName` is the single source of truth shared
         // between Telegram bind, profile editor and this header.
-        Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().padding(top = 10.dp), contentAlignment = Alignment.Center) {
             Text(
                 state.userName,
                 color = Wellness.colors.text,
                 style = Wellness.typography.headlineLarge,
             )
         }
-        Box(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 14.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 10.dp), contentAlignment = Alignment.Center) {
             Text(
                 "${state.age} лет · ${state.gender.title}",
                 color = Wellness.colors.muted,
