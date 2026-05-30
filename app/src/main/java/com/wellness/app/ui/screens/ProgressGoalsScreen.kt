@@ -1,8 +1,10 @@
 package com.wellness.app.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -10,11 +12,13 @@ import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -73,7 +77,18 @@ import com.wellness.app.ui.theme.Wellness
 import com.wellness.app.ui.theme.WellnessColors
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.util.lerp
 import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 // ── Shared helpers ─────────────────────────────────────────────────────
 
@@ -135,14 +150,13 @@ fun ProgressGoalsScreen(
     val state = LocalAppState.current
     val breakdown = calculateGoalProgress(state)
 
-    // null = calm overview list; otherwise an open metric detail.
-    var detail by remember { mutableStateOf<Int?>(null) }
+    // null = calm overview only. Tapping a metric row opens its detail via a
+    // container-transform overlay: the card surface morphs to full screen while
+    // its content settles in (it does NOT stretch), and a swipe down dismisses.
+    var open by remember { mutableStateOf<Int?>(null) }
+    var bounds by remember { mutableStateOf<CardBounds?>(null) }
 
-    // Hardware/gesture back returns to the overview from a detail screen.
-    BackHandler(enabled = detail != null) { detail = null }
-
-    // Fresh scroll state per view so each opens at the top.
-    val scroll = remember(detail) { ScrollState(0) }
+    val scroll = remember { ScrollState(0) }
     val elastic = rememberElasticOverscroll(maxVertical = 56.dp, maxHorizontal = 0.dp)
     val topInset =
         WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 6.dp
@@ -157,27 +171,28 @@ fun ProgressGoalsScreen(
                         .verticalScroll(scroll)
                         .padding(top = topInset, bottom = 160.dp),
                 ) {
-                    val cur = detail
-                    if (cur == null) {
-                        SettingsHeader(title = "Прогресс целей", onBack = onBack)
-                        OverviewCalm(breakdown = breakdown, onOpen = { detail = it })
-                    } else {
-                        val title = when (cur) {
-                            WEIGHT -> "Вес"
-                            SLEEP -> "Сон"
-                            else -> "Шаги"
-                        }
-                        SettingsHeader(title = title, onBack = { detail = null })
-                        Box(Modifier.height(4.dp))
-                        when (cur) {
-                            WEIGHT -> WeightSection(onAddWeight = onAddWeight)
-                            SLEEP -> SleepSection(onAddSleep = onAddSleep)
-                            else -> StepsSection()
-                        }
-                    }
+                    SettingsHeader(title = "Прогресс целей", onBack = onBack)
+                    OverviewCalm(
+                        breakdown = breakdown,
+                        hidden = open,
+                        onOpen = { id, b -> bounds = b; open = id },
+                    )
                     Box(Modifier.height(24.dp))
                 }
             }
+        }
+
+        val cur = open
+        val b = bounds
+        if (cur != null && b != null) {
+            MetricMorphOverlay(
+                metric = cur,
+                bounds = b,
+                topInset = topInset,
+                onAddWeight = onAddWeight,
+                onAddSleep = onAddSleep,
+                onClosed = { open = null },
+            )
         }
     }
 }
@@ -185,7 +200,11 @@ fun ProgressGoalsScreen(
 // ── Calm overview ──────────────────────────────────────────────────────
 
 @Composable
-private fun OverviewCalm(breakdown: GoalBreakdown, onOpen: (Int) -> Unit) {
+private fun OverviewCalm(
+    breakdown: GoalBreakdown,
+    hidden: Int?,
+    onOpen: (Int, CardBounds) -> Unit,
+) {
     val state = LocalAppState.current
     val percent = (breakdown.overall * 100f).toInt()
 
@@ -261,6 +280,7 @@ private fun OverviewCalm(breakdown: GoalBreakdown, onOpen: (Int) -> Unit) {
     Column(Modifier.screenHPad(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // Вес
         MetricRow(
+            metric = WEIGHT,
             icon = "scale-bold-duotone",
             color = Wellness.colors.accent,
             name = "Вес",
@@ -274,10 +294,12 @@ private fun OverviewCalm(breakdown: GoalBreakdown, onOpen: (Int) -> Unit) {
                     true,
                 )
             },
-            onClick = { onOpen(WEIGHT) },
+            hidden = hidden == WEIGHT,
+            onOpen = onOpen,
         )
         // Сон
         MetricRow(
+            metric = SLEEP,
             icon = "moon-sleep-bold-duotone",
             color = WellnessColors.Water,
             name = "Сон",
@@ -287,17 +309,20 @@ private fun OverviewCalm(breakdown: GoalBreakdown, onOpen: (Int) -> Unit) {
             trend = lastSleep?.let {
                 Triple(sleepQualityLabel(it.quality), WellnessColors.Water, false)
             },
-            onClick = { onOpen(SLEEP) },
+            hidden = hidden == SLEEP,
+            onOpen = onOpen,
         )
         // Шаги (coming soon)
         MetricRow(
+            metric = STEPS,
             icon = "walking-bold-duotone",
             color = WellnessColors.Mint,
             name = "Шаги",
             value = "—",
             spark = null,
             trend = Triple("скоро", Wellness.colors.muted, false),
-            onClick = { onOpen(STEPS) },
+            hidden = hidden == STEPS,
+            onOpen = onOpen,
         )
     }
 }
@@ -320,18 +345,29 @@ private fun CalmSectionLabel(text: String) {
  */
 @Composable
 private fun MetricRow(
+    metric: Int,
     icon: String,
     color: Color,
     name: String,
     value: String,
     spark: List<Float>?,
     trend: Triple<String, Color, Boolean>?,
-    onClick: () -> Unit,
+    hidden: Boolean,
+    onOpen: (Int, CardBounds) -> Unit,
 ) {
-    NoFeedbackButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+    // Root-space bounds of the card, its icon box and its name label — handed to
+    // the overlay so the morph and the flying icon/name start exactly here.
+    var cardR by remember { mutableStateOf(Rect.Zero) }
+    var iconR by remember { mutableStateOf(Rect.Zero) }
+    var nameR by remember { mutableStateOf(Rect.Zero) }
+    NoFeedbackButton(
+        onClick = { onOpen(metric, CardBounds(cardR, iconR, nameR, color, icon, name)) },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         Row(
             Modifier
                 .fillMaxWidth()
+                .onGloballyPositioned { cardR = it.boundsInRoot() }
                 .clip(RoundedCornerShape(22.dp))
                 .background(Wellness.colors.container, RoundedCornerShape(22.dp))
                 .padding(16.dp),
@@ -340,12 +376,21 @@ private fun MetricRow(
             Box(
                 Modifier
                     .size(44.dp)
+                    .onGloballyPositioned { iconR = it.boundsInRoot() }
+                    .graphicsLayer { alpha = if (hidden) 0f else 1f }
                     .background(color.copy(alpha = 0.16f), RoundedCornerShape(14.dp)),
                 contentAlignment = Alignment.Center,
             ) { SolarIcon(name = icon, tint = color, size = 24.dp) }
             Box(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(name, color = Wellness.colors.muted, style = Wellness.typography.bodySmall)
+                Text(
+                    name,
+                    color = Wellness.colors.muted,
+                    style = Wellness.typography.bodySmall,
+                    modifier = Modifier
+                        .onGloballyPositioned { nameR = it.boundsInRoot() }
+                        .graphicsLayer { alpha = if (hidden) 0f else 1f },
+                )
                 Box(Modifier.height(2.dp))
                 Text(
                     value,
@@ -364,6 +409,238 @@ private fun MetricRow(
                     CalmTrendPill(text = trend.first, color = trend.second, withArrow = trend.third)
                 }
             }
+        }
+    }
+}
+
+// ── Container-transform overlay ────────────────────────────────────────
+
+/** Root-space geometry + identity of a tapped metric card. */
+private data class CardBounds(
+    val card: Rect,
+    val icon: Rect,
+    val name: Rect,
+    val color: Color,
+    val iconName: String,
+    val title: String,
+)
+
+/**
+ * The detail screen as a container transform of the tapped card.
+ *
+ * Only an EMPTY surface morphs from the card rect to full screen (size +
+ * corner radius + a small bg→container colour blend). The real content lives
+ * in a separate layer that is NOT scaled by the morph — it just fades into
+ * place, so nothing stretches. The metric icon + name fly from the card to the
+ * detail header. A downward drag on the header dismisses the sheet (it follows
+ * the finger and scales down a touch); release past a threshold, hardware back,
+ * or the ✕ button reverse-morphs it back into the card.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MetricMorphOverlay(
+    metric: Int,
+    bounds: CardBounds,
+    topInset: Dp,
+    onAddWeight: () -> Unit,
+    onAddSleep: () -> Unit,
+    onClosed: () -> Unit,
+) {
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val progress = remember { Animatable(0f) }
+    val dragY = remember { Animatable(0f) }
+    var closing by remember { mutableStateOf(false) }
+
+    // Calm, slightly-damped spring — matches the web prototype's feel.
+    val morphSpec = spring<Float>(dampingRatio = 0.9f, stiffness = 340f)
+
+    fun close() {
+        if (closing) return
+        closing = true
+        scope.launch {
+            launch { dragY.animateTo(0f, spring(stiffness = 700f)) }
+            progress.animateTo(0f, morphSpec)
+            onClosed()
+        }
+    }
+
+    LaunchedEffect(Unit) { progress.animateTo(1f, morphSpec) }
+    BackHandler(enabled = true) { close() }
+
+    // Measured target rects of the detail-header icon / name (the flight ends).
+    var iconEnd by remember { mutableStateOf(Rect.Zero) }
+    var nameEnd by remember { mutableStateOf(Rect.Zero) }
+    val bodyScroll = rememberScrollState()
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wpx = constraints.maxWidth.toFloat()
+        val hpx = constraints.maxHeight.toFloat()
+        val p = progress.value
+        val dragFrac = (dragY.value / hpx).coerceIn(0f, 1f)
+        val contentAlpha = ((p - 0.18f) / 0.55f).coerceIn(0f, 1f)
+
+        // ── backdrop dim (under the sheet) ──
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = 0.45f * p * (1f - dragFrac * 0.85f) }
+                .background(Color.Black),
+        )
+
+        // ── sheet group: surface + content, drag-translated & scaled together ──
+        Box(
+            Modifier.fillMaxSize().graphicsLayer {
+                translationY = dragY.value
+                val s = 1f - dragFrac * 0.12f
+                scaleX = s
+                scaleY = s
+                transformOrigin = TransformOrigin(0.5f, 0f)
+            },
+        ) {
+            // Surface — the only thing that morphs. Empty, so no content stretch.
+            val left = lerp(bounds.card.left, 0f, p)
+            val top = lerp(bounds.card.top, 0f, p)
+            val w = lerp(bounds.card.width, wpx, p)
+            val h = lerp(bounds.card.height, hpx, p)
+            val cornerDp = with(density) { lerp(22.dp.toPx(), 0f, p).toDp() }
+            val surfaceColor = androidx.compose.ui.graphics.lerp(
+                Wellness.colors.container,
+                Wellness.colors.bg,
+                (p * 2.2f).coerceIn(0f, 1f),
+            )
+            Box(
+                Modifier
+                    .offset { IntOffset(left.roundToInt(), top.roundToInt()) }
+                    .size(with(density) { w.toDp() }, with(density) { h.toDp() })
+                    .clip(RoundedCornerShape(cornerDp))
+                    .background(surfaceColor),
+            )
+
+            // Content layer — fixed full-screen layout, fades in (never scaled).
+            Column(Modifier.fillMaxSize()) {
+                Spacer(Modifier.height(topInset))
+
+                // Header zone (fixed). Drag down here to dismiss.
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures(
+                                onVerticalDrag = { change, dy ->
+                                    change.consume()
+                                    scope.launch {
+                                        dragY.snapTo((dragY.value + dy).coerceAtLeast(0f))
+                                    }
+                                },
+                                onDragEnd = {
+                                    if (dragY.value > with(density) { 120.dp.toPx() }) {
+                                        close()
+                                    } else {
+                                        scope.launch { dragY.animateTo(0f, spring(stiffness = 600f)) }
+                                    }
+                                },
+                            )
+                        },
+                ) {
+                    // grab handle
+                    Box(
+                        Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            Modifier
+                                .graphicsLayer { alpha = contentAlpha }
+                                .width(40.dp)
+                                .height(5.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(Wellness.colors.track),
+                        )
+                    }
+                    // header row: icon slot · title · close
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier
+                                .size(52.dp)
+                                .onGloballyPositioned { iconEnd = it.boundsInRoot() }
+                                .graphicsLayer { alpha = if (p >= 0.999f) 1f else 0f }
+                                .background(bounds.color.copy(alpha = 0.16f), RoundedCornerShape(17.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) { SolarIcon(name = bounds.iconName, tint = bounds.color, size = 28.dp) }
+                        Box(Modifier.width(14.dp))
+                        Text(
+                            bounds.title,
+                            color = Wellness.colors.text,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 24.sp,
+                            modifier = Modifier
+                                .weight(1f)
+                                .onGloballyPositioned { nameEnd = it.boundsInRoot() }
+                                .graphicsLayer { alpha = if (p >= 0.999f) 1f else 0f },
+                        )
+                        NoFeedbackButton(onClick = { close() }, modifier = Modifier.size(44.dp)) {
+                            Box(
+                                Modifier
+                                    .graphicsLayer { alpha = contentAlpha }
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(13.dp))
+                                    .background(Wellness.colors.container),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                SolarIcon(
+                                    name = "close-circle-bold-duotone",
+                                    tint = Wellness.colors.muted,
+                                    size = 24.dp,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Body (scrolls), fades in on its own layer.
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .graphicsLayer { alpha = contentAlpha },
+                ) {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(bodyScroll)
+                            .padding(top = 6.dp, bottom = 40.dp),
+                    ) {
+                        when (metric) {
+                            WEIGHT -> WeightSection(onAddWeight = onAddWeight)
+                            SLEEP -> SleepSection(onAddSleep = onAddSleep)
+                            else -> StepsSection()
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Flying icon + name (travel card → header), in pure root space ──
+        if (p < 0.999f && iconEnd != Rect.Zero && nameEnd != Rect.Zero) {
+            // icon
+            val ix = lerp(bounds.icon.left, iconEnd.left, p)
+            val iy = lerp(bounds.icon.top, iconEnd.top, p)
+            val isz = lerp(bounds.icon.width, iconEnd.width, p)
+            val iCorner = with(density) { lerp(14.dp.toPx(), 17.dp.toPx(), p).toDp() }
+            val glyph = with(density) { lerp(24.dp.toPx(), 28.dp.toPx(), p).toDp() }
+            Box(
+                Modifier
+                    .offset { IntOffset(ix.roundToInt(), iy.roundToInt()) }
+                    .size(with(density) { isz.toDp() })
+                    .clip(RoundedCornerShape(iCorner))
+                    .background(bounds.color.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) { SolarIcon(name = bounds.iconName, tint = bounds.color, size = glyph) }
         }
     }
 }
